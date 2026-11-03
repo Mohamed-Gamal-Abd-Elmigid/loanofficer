@@ -33,6 +33,9 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Local UAT probe output (may contain customer PII)
+/tool/uat_probe_output/
+
 # Symbolication related
 app.*.symbols
 

@@ -33,8 +33,8 @@ class AuthApi {
 
   /// Signs in against `fmc/auth/login`.
   ///
-  /// Returns the roles the user still has to choose. An empty list means the
-  /// only role was selected already.
+  /// Returns every privilege from the login body. The caller shows the
+  /// privileges screen; nothing is selected until [selectRole].
   Future<List<FmcRole>> login({
     required String employeeId,
     required String password,
@@ -49,6 +49,14 @@ class AuthApi {
     required String password,
   }) async {
     final userId = employeeId.trim();
+    // Fusion sends Authorization and x-current-role as the literal "null"
+    // on this call. A saved token makes the server reject the user.
+    _session
+      ..token = null
+      ..roleId = null;
+    try {
+      await _session.save();
+    } catch (_) {}
     final result = await _client.post('fmc/auth/login', {
       'userId': userId,
       'password': password,
@@ -62,20 +70,18 @@ class AuthApi {
     if (token is! String || token.isEmpty) {
       throw AuthApiException('بيانات الدخول غير صحيحة');
     }
-    final roles = _roles(data['availableRoleAndScreens']);
+    var roles = _roles(data['availableRoleAndScreens']);
+    if (roles.isEmpty) roles = _roles([data['currentRole']]);
     if (roles.isEmpty) {
       throw AuthApiException('هذا المستخدم ليس لديه أي صلاحيات');
     }
     _session
       ..token = token
       ..mcCode = data['mcCode'] == null ? '1' : '${data['mcCode']}'
-      ..userId = userId
+      ..userId = _text(data['usrId']).isEmpty ? userId : _text(data['usrId'])
       ..roleId = null;
-    await _session.save();
-    if (roles.length == 1) {
-      await _selectRole(roles.first);
-      return const [];
-    }
+    await _session.saveLogin(data);
+    await _saveOfficer(data, userId);
     return roles;
   }
 
@@ -84,10 +90,39 @@ class AuthApi {
   }
 
   Future<void> _selectRole(FmcRole role) async {
-    await _client.get('lookups/users/treeOfpages', query: {'roleId': role.id});
-    _session.roleId = role.id;
-    await _session.save();
+    final treeApi = await _client.get(
+      'lookups/users/treeOfpages',
+      query: {'roleId': role.id},
+    );
+    final roleTree = _roleTree(await _session.readLogin(), role.id);
+    if (roleTree == null) {
+      throw AuthApiException('تعذر تحميل صلاحيات الدور');
+    }
+    await _session.saveRoleSelection(
+      roleId: role.id,
+      treeApi: treeApi,
+      roleTree: roleTree,
+    );
     await _loadOfficer();
+  }
+
+  Map<String, dynamic>? _roleTree(Map<String, dynamic>? login, String roleId) {
+    if (login == null) return null;
+    final roles = login['availableRoleAndScreens'];
+    if (roles is List) {
+      for (final item in roles) {
+        if (item is! Map) continue;
+        if ('${item['roleId']}'.trim() != roleId) continue;
+        final tree = item['treeResponse'];
+        if (tree is Map) return Map<String, dynamic>.from(tree);
+      }
+    }
+    final current = login['currentRole'];
+    if (current is Map && '${current['roleId']}'.trim() == roleId) {
+      final tree = current['treeResponse'];
+      if (tree is Map) return Map<String, dynamic>.from(tree);
+    }
+    return null;
   }
 
   Future<SignedInOfficer?> cachedOfficer() => _officerStore.read();
@@ -172,8 +207,22 @@ class AuthApi {
     });
   }
 
+  Future<void> _saveOfficer(Map<String, dynamic> data, String userId) async {
+    final employee = _text(data['usrId']);
+    try {
+      await _officerStore.save(
+        SignedInOfficer(
+          fullName: _firstText(data, const ['nameAr', 'nameEn']),
+          employeeId: employee.isEmpty ? userId : employee,
+          email: _firstText(data, const ['email', 'maskEmail']),
+        ),
+      );
+    } catch (_) {}
+  }
+
   Future<void> _loadOfficer() async {
     final userId = _session.userId ?? '';
+    final existing = await _officerStore.read();
     Map<String, dynamic> profile = const {};
     try {
       final result = await _client.get(
@@ -188,17 +237,21 @@ class AuthApi {
       'fullName',
     ]);
     final email = _firstText(profile, const ['email', 'eMail', 'maskEmail']);
-    final employee = _firstText(profile, const ['userId']);
+    final employee = _firstText(profile, const ['userId', 'usrId']);
     try {
       await _officerStore.save(
         SignedInOfficer(
-          fullName: name,
-          employeeId: employee.isEmpty ? userId : employee,
-          email: email,
+          fullName: name.isEmpty ? (existing?.fullName ?? '') : name,
+          employeeId: employee.isEmpty
+              ? (existing?.employeeId ?? userId)
+              : employee,
+          email: email.isEmpty ? (existing?.email ?? '') : email,
         ),
       );
     } catch (_) {}
   }
+
+  String _text(dynamic value) => value == null ? '' : '$value'.trim();
 
   List<FmcRole> _roles(dynamic value) {
     if (value is! List) return const [];

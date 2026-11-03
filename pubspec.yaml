@@ -43,6 +43,11 @@ dependencies:
   flutter_secure_storage: ^9.2.4
   local_auth: ^2.3.0
   file_picker: ^10.3.3
+  pdfx: ^2.9.2
+  pdf: ^3.11.3
+  bottom_picker: ^5.0.0
+  cupertino_ui: ^1.1.4
+  material_ui: ^1.8.0
 
 dev_dependencies:
   flutter_test:
@@ -70,8 +75,10 @@ flutter:
     - assets/images/splash.gif
     - assets/images/logo_fmc.png
     - assets/images/logo_tanmeyah.png
+    - assets/images/logo_tanmeyah_brand.png
     - assets/images/forgot_reset.png
     - assets/images/forgot_otp.png
+    - assets/images/biometric_face_id.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

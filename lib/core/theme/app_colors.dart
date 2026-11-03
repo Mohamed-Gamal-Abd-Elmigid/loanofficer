@@ -5,6 +5,10 @@ class AppColors {
 
   static const Color navy = Color(0xFF1B3A7A);
   static const Color navyLabel = Color(0xFF1E3A8A);
+  static const Color privilegeTitle = Color(0xFFF97316);
+  static const Color privilegeLabel = Color(0xFF032F64);
+  static const Color dropdownBorder = Color(0xFFCED4DA);
+  static const Color dropdownHint = Color(0xFF6C757D);
   static const Color fieldLabel = Color(0xFF5C6B82);
   static const Color text = Color(0xFF3A3A3A);
   static const Color muted = Color(0xFF9A9AA0);

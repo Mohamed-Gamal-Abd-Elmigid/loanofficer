@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -6,6 +7,7 @@ import 'package:loanofficer/core/api/api_text.dart';
 import 'package:loanofficer/core/api/fmc_platform_client_web.dart'
     if (dart.library.io) 'package:loanofficer/core/api/fmc_platform_client_io.dart';
 import 'package:loanofficer/core/api/fmc_session.dart';
+import 'package:loanofficer/core/auth/session_guard.dart';
 import 'package:loanofficer/core/config/fmc_config.dart';
 
 /// Speaks the Fusion HTTP envelope: headers, `result`, and `errors[].msg`.
@@ -25,12 +27,28 @@ class FmcClient {
     return _send('POST', path, body: body);
   }
 
+  /// Full Fusion JSON envelope (`status`, `result`, optional totals, …).
+  Future<Map<String, dynamic>> postEnvelope(String path, Object? body) async {
+    final request = http.Request('POST', _uri(path, null));
+    request.headers.addAll(_headers);
+    if (body != null) {
+      request.body = jsonEncode(body);
+    }
+    final streamed = await _http.send(request);
+    final response = await http.Response.fromStream(streamed);
+    final json = _parseEnvelope(response);
+    if (json == null) {
+      throw AuthApiException('تعذر إكمال الطلب');
+    }
+    return json;
+  }
+
   Future<dynamic> put(String path, Object? body) {
     return _send('PUT', path, body: body);
   }
 
-  Future<dynamic> delete(String path) {
-    return _send('DELETE', path);
+  Future<dynamic> delete(String path, {Map<String, String>? query}) {
+    return _send('DELETE', path, query: query);
   }
 
   Future<dynamic> _send(
@@ -71,6 +89,10 @@ class FmcClient {
   }
 
   dynamic _decode(http.Response response) {
+    return _parseEnvelope(response)?['result'];
+  }
+
+  Map<String, dynamic>? _parseEnvelope(http.Response response) {
     final text = decodeApiText(utf8.decode(response.bodyBytes));
     Map<String, dynamic>? json;
     if (text.trim().isNotEmpty) {
@@ -90,8 +112,16 @@ class FmcClient {
 
     if (json != null) {
       final status = '${json['status'] ?? ''}'.toUpperCase();
+      final message = _errorMessage(json);
+      final unauthorized =
+          response.statusCode == 401 || status == 'UNAUTHORIZED';
+      if (unauthorized) {
+        _onUnauthorized();
+        throw AuthApiException(
+          message ?? 'بيانات الدخول غير صحيحة',
+        );
+      }
       final failedStatus =
-          status == 'UNAUTHORIZED' ||
           status == 'EXCEPTION' ||
           status == 'ERROR' ||
           status == 'FAILED' ||
@@ -99,24 +129,26 @@ class FmcClient {
       final errors = json['errors'];
       final hasErrors = errors is List && errors.isNotEmpty;
       if (response.statusCode >= 400 || failedStatus || hasErrors) {
-        throw AuthApiException(
-          _errorMessage(json) ??
-              (status == 'UNAUTHORIZED'
-                  ? 'بيانات الدخول غير صحيحة'
-                  : 'تعذر إكمال الطلب'),
-        );
+        throw AuthApiException(message ?? 'تعذر إكمال الطلب');
       }
-      return json['result'];
+      return json;
     }
 
     if (response.statusCode >= 400) {
-      throw AuthApiException(
-        response.statusCode == 401
-            ? 'بيانات الدخول غير صحيحة'
-            : 'تعذر إكمال الطلب',
-      );
+      if (response.statusCode == 401) {
+        _onUnauthorized();
+        throw AuthApiException('بيانات الدخول غير صحيحة');
+      }
+      throw AuthApiException('تعذر إكمال الطلب');
     }
     return null;
+  }
+
+  void _onUnauthorized() {
+    final token = _session.token?.trim() ?? '';
+    if (token.isEmpty) return;
+    // Login mistakes send 401 without a saved token — skip redirect.
+    unawaited(forceSessionExpiredLogout());
   }
 
   String? _errorMessage(Map<String, dynamic> json) {
@@ -137,6 +169,10 @@ class FmcClient {
       if (first is String && first.trim().isNotEmpty) {
         return decodeApiText(first.trim());
       }
+    }
+    final message = json['message'];
+    if (message is String && message.trim().isNotEmpty) {
+      return decodeApiText(message.trim());
     }
     return null;
   }

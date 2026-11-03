@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil_plus/flutter_screenutil_plus.dart';
+import 'package:loanofficer/core/components/field_error_slot.dart';
 import 'package:loanofficer/core/theme/app_colors.dart';
 import 'package:loanofficer/core/validation/app_validators.dart';
 
@@ -16,6 +17,7 @@ class AppTextField extends StatelessWidget {
     this.suffix,
     this.errorText,
     this.inputFormatters,
+    this.reserveErrorSpace = false,
   });
 
   final TextEditingController controller;
@@ -27,15 +29,16 @@ class AppTextField extends StatelessWidget {
   final String? errorText;
   final List<TextInputFormatter>? inputFormatters;
 
+  /// When true, keeps a fixed band for errors (forms). Login/auth screens leave
+  /// this false for tighter spacing until an error appears.
+  final bool reserveErrorSpace;
+
   @override
   Widget build(BuildContext context) {
     final eyeOnLeft = Directionality.of(context) == TextDirection.rtl;
     final hasError = errorText != null;
     final borderColor = hasError ? AppColors.red : AppColors.border;
     final isEmail = keyboardType == TextInputType.emailAddress;
-    final isNumeric =
-        keyboardType == TextInputType.number ||
-        keyboardType == TextInputType.phone;
     final direction = isEmail ? TextDirection.ltr : TextDirection.rtl;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -44,13 +47,17 @@ class AppTextField extends StatelessWidget {
           controller: controller,
           obscureText: obscure,
           onChanged: onChanged,
-          keyboardType: keyboardType,
+          keyboardType: obscure
+              ? (keyboardType ?? TextInputType.visiblePassword)
+              : keyboardType,
           inputFormatters: [
             if (isEmail) const TanmeyahDomainFormatter(),
             ...?inputFormatters,
           ],
-          autocorrect: !isEmail && !isNumeric,
-          enableSuggestions: !isEmail && !isNumeric,
+          autocorrect: false,
+          enableSuggestions: false,
+          smartDashesType: SmartDashesType.disabled,
+          smartQuotesType: SmartQuotesType.disabled,
           textDirection: direction,
           textAlign: TextAlign.right,
           style: TextStyle(
@@ -93,20 +100,16 @@ class AppTextField extends StatelessWidget {
                 color: hasError ? AppColors.red : AppColors.navy,
               ),
             ),
+            errorStyle: const TextStyle(height: 0, fontSize: 0),
+            errorText: null,
           ),
         ),
-        if (hasError) ...[
-          SizedBox(height: kIsWeb ? 6 : 6.h),
-          Text(
-            errorText!,
-            textAlign: TextAlign.right,
-            textDirection: TextDirection.rtl,
-            style: TextStyle(
-              color: AppColors.red,
-              fontSize: kIsWeb ? 12 : 12.sp,
-            ),
+        if (hasError || reserveErrorSpace)
+          FieldErrorSlot(
+            message: hasError ? errorText : null,
+            maxLines: 2,
+            reserveWhenEmpty: reserveErrorSpace,
           ),
-        ],
       ],
     );
   }

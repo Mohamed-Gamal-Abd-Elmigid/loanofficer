@@ -2,14 +2,17 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_screenutil_plus/flutter_screenutil_plus.dart';
-import 'package:loanofficer/admin/admin_gate.dart';
+import 'package:cupertino_ui/cupertino_ui.dart' as cupertino_ui;
+import 'package:material_ui/material_ui.dart' as material_ui;
+import 'package:loanofficer/presenter/admin_gate/scene/admin_gate_scene.dart';
+import 'package:loanofficer/core/auth/session_guard.dart';
 import 'package:loanofficer/core/components/app_loading.dart';
 import 'package:loanofficer/core/components/dismiss_keyboard.dart';
 import 'package:loanofficer/core/api/fmc_session.dart';
 import 'package:loanofficer/core/theme/app_colors.dart';
 import 'package:loanofficer/core/theme/app_design.dart';
 import 'package:loanofficer/core/theme/app_typography.dart';
-import 'package:loanofficer/splash/splash_screen.dart';
+import 'package:loanofficer/presenter/splash/scene/splash_scene.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -34,6 +37,7 @@ class MyApp extends StatelessWidget {
       enableScaleText: () => !kIsWeb,
       builder: (context, child) {
         return MaterialApp(
+          navigatorKey: appNavigatorKey,
           title: kIsWeb ? 'لوحة الإدارة' : 'Loan Officer',
           debugShowCheckedModeBanner: false,
           theme: ThemeData(
@@ -51,6 +55,9 @@ class MyApp extends StatelessWidget {
           supportedLocales: const [Locale('ar'), Locale('en')],
           localizationsDelegates: const [
             GlobalMaterialLocalizations.delegate,
+            // bottom_picker: material_ui sheet + cupertino_ui date wheels.
+            material_ui.GlobalMaterialLocalizations.delegate,
+            cupertino_ui.GlobalCupertinoLocalizations.delegate,
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
           ],
@@ -62,7 +69,7 @@ class MyApp extends StatelessWidget {
           home: child,
         );
       },
-      child: kIsWeb ? const AdminGate() : const SplashScreen(),
+      child: kIsWeb ? const AdminGateScene() : const SplashScene(),
     );
   }
 }

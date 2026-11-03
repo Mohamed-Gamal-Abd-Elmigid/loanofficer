@@ -4,30 +4,32 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:loanofficer/core/api/api_exception.dart';
 import 'package:loanofficer/core/theme/app_design.dart';
 import 'package:loanofficer/main.dart';
-import 'package:loanofficer/screens/forgot_password/create_password_screen.dart';
-import 'package:loanofficer/screens/forgot_password/request_reset_screen.dart';
-import 'package:loanofficer/screens/forgot_password/verify_email_screen.dart';
+import 'package:loanofficer/presenter/create_password/scene/create_password_scene.dart';
+import 'package:loanofficer/presenter/request_reset/scene/request_reset_scene.dart';
+import 'package:loanofficer/presenter/verify_email/scene/verify_email_scene.dart';
 import 'package:loanofficer/core/api/api_text.dart';
 import 'package:loanofficer/core/components/app_text_field.dart';
 import 'package:loanofficer/core/validation/app_validators.dart';
-import 'package:loanofficer/screens/forgot_password/password_rules.dart';
-import 'package:loanofficer/screens/login_screen.dart';
-import 'package:loanofficer/screens/main/financing_screen.dart';
-import 'package:loanofficer/screens/main/home_screen.dart';
-import 'package:loanofficer/screens/main/main_shell.dart';
-import 'package:loanofficer/screens/main/more_screen.dart';
-import 'package:loanofficer/splash/splash_screen.dart';
+import 'package:loanofficer/core/validation/fmc_validation.dart';
+import 'package:loanofficer/presenter/forgot_password/widget/password_rules.dart';
+import 'package:loanofficer/presenter/login/scene/login_scene.dart';
+import 'package:loanofficer/presenter/fund_track/scene/fund_track_scene.dart';
+import 'package:loanofficer/presenter/main_shell/scene/create_tab_scene.dart';
+import 'package:loanofficer/presenter/main_shell/scene/main_shell_scene.dart';
+import 'package:loanofficer/presenter/more/scene/more_scene.dart';
+import 'package:loanofficer/presenter/personal_fund_inquiry/scene/personal_fund_inquiry_scene.dart';
+import 'package:loanofficer/presenter/splash/scene/splash_scene.dart';
 
 void main() {
   testWidgets('splash opens the login screen', (WidgetTester tester) async {
     await tester.pumpWidget(const MyApp());
 
-    expect(find.byType(SplashScreen), findsOneWidget);
+    expect(find.byType(SplashScene), findsOneWidget);
 
     await tester.pump(const Duration(seconds: 5));
     await tester.pump();
 
-    expect(find.byType(LoginScreen), findsOneWidget);
+    expect(find.byType(LoginScene), findsOneWidget);
     expect(find.text('تسجيل الدخول'), findsWidgets);
   });
 
@@ -45,21 +47,20 @@ void main() {
     expect(tester.testTextInput.isVisible, isFalse);
   });
 
-  testWidgets('forgot password opens the reset request', (tester) async {
+  testWidgets('forgot password stays hidden on the login screen', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       ScreenUtilPlusInit(
         designSize: appDesignSize,
         builder: (context, child) =>
             MaterialApp(locale: const Locale('ar'), home: child),
-        child: const LoginScreen(),
+        child: const LoginScene(),
       ),
     );
 
-    await tester.tap(find.text('نسيت كلمة المرور؟'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('إعادة تعين كلمة المرور'), findsOneWidget);
-    expect(find.text('استمرار'), findsOneWidget);
+    expect(find.text('نسيت كلمة المرور؟'), findsNothing);
+    expect(find.text('تسجيل الدخول'), findsWidgets);
   });
 
   testWidgets('reset request fits a short screen', (tester) async {
@@ -72,7 +73,7 @@ void main() {
       ScreenUtilPlusInit(
         designSize: appDesignSize,
         builder: (context, child) => MaterialApp(home: child),
-        child: const RequestResetScreen(),
+        child: const RequestResetScene(),
       ),
     );
 
@@ -89,7 +90,7 @@ void main() {
       ScreenUtilPlusInit(
         designSize: appDesignSize,
         builder: (context, child) => MaterialApp(home: child),
-        child: const CreatePasswordScreen(),
+        child: const CreatePasswordScene(),
       ),
     );
 
@@ -104,7 +105,7 @@ void main() {
     await tester.tap(find.text('تسجيل الدخول'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(LoginScreen), findsOneWidget);
+    expect(find.byType(LoginScene), findsOneWidget);
     expect(find.text('حسنا..!'), findsNothing);
   });
 
@@ -113,7 +114,7 @@ void main() {
       ScreenUtilPlusInit(
         designSize: appDesignSize,
         builder: (context, child) => MaterialApp(home: child),
-        child: const Scaffold(body: MoreScreen()),
+        child: const Scaffold(body: MoreScene()),
       ),
     );
 
@@ -132,30 +133,33 @@ void main() {
   });
 
   testWidgets('main screen switches between its three pages', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(800, 1200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
     await tester.pumpWidget(
       ScreenUtilPlusInit(
         designSize: appDesignSize,
         builder: (context, child) => MaterialApp(home: child),
-        child: const MainShell(),
+        child: const MainShellScene(),
       ),
     );
-
-    expect(find.byType(HomeScreen), findsOneWidget);
-    expect(find.text('الرئيسية'), findsOneWidget);
-
-    await tester.tap(find.text('ط.تمويلية'));
     await tester.pump();
-    expect(find.byType(FinancingScreen), findsOneWidget);
-    expect(find.text('طلبات التمويلية'), findsOneWidget);
-    expect(find.text('إنشاء طلب تمويل فردي'), findsOneWidget);
-    expect(find.text('متابعة طلبات التمويل'), findsOneWidget);
+    tester.takeException();
 
-    await tester.tap(find.text('المزيد'));
+    expect(find.byType(CreateTabScene), findsOneWidget);
+    expect(find.text('إنشاء'), findsOneWidget);
+    expect(find.text('إنشاء طلب تمويل فردي جديد'), findsOneWidget);
+
+    await tester.tap(find.text('متابعة'));
     await tester.pump();
+    expect(find.byType(FundTrackScene), findsOneWidget);
+    expect(find.text('متابعة الطلبات'), findsOneWidget);
+
+    await tester.tap(find.text('استعلام'));
     await tester.pump();
-    expect(find.byType(MoreScreen), findsOneWidget);
-    expect(find.text('تسجيل الخروج'), findsOneWidget);
-    expect(find.text('الاسم'), findsOneWidget);
+    expect(find.byType(PersonalFundInquiryScene), findsOneWidget);
+    expect(find.text('استعلام تمويل فردي'), findsOneWidget);
+    expect(find.byIcon(Icons.logout_rounded), findsOneWidget);
   });
 
   test('same password error is shown in arabic', () {
@@ -166,6 +170,19 @@ void main() {
         ),
       ),
       'كلمة المرور الجديدة يجب أن تختلف عن كلمة المرور القديمة.',
+    );
+  });
+
+  test('fund track search validates national id and service id', () {
+    expect(FmcValidation.fundTrackCustId(''), isNull);
+    expect(
+      FmcValidation.fundTrackCustId('123'),
+      FmcValidation.nationalIdMessage,
+    );
+    expect(FmcValidation.fundTrackServiceId(''), isNull);
+    expect(
+      FmcValidation.fundTrackServiceId('abc'),
+      FmcValidation.numericMessage,
     );
   });
 
@@ -249,7 +266,7 @@ void main() {
         builder: (context, child) {
           return MaterialApp(locale: const Locale('ar'), home: child);
         },
-        child: const VerifyEmailScreen(
+        child: const VerifyEmailScene(
           email: 'maged@tanmeyah.com',
           employeeId: '1',
           otp: '12345',
