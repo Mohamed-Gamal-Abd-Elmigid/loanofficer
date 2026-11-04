@@ -19,7 +19,10 @@ import 'package:loanofficer/presenter/personal_fund_inquiry/widgets/inquiry_cust
 import 'package:loanofficer/presenter/personal_fund_inquiry/widgets/inquiry_grantor_profile.dart';
 import 'package:loanofficer/presenter/personal_fund_inquiry/widgets/inquiry_organization_profile.dart';
 /// Shared helpers + all «⋮» inquiry destinations (FMC `funding-personal-service-query`).
-class InquiryFundDataScene extends StatelessWidget {
+///
+/// Mirrors web `FundInquiryModalComponent` / `fund-inquiry-modal.interface.ts`
+/// (branch → customer → fund → granted → debt → early → transfer → write-off → reschedule).
+class InquiryFundDataScene extends StatefulWidget {
   const InquiryFundDataScene({super.key, required this.row});
 
   final FundTrackRow row;
@@ -32,150 +35,301 @@ class InquiryFundDataScene extends StatelessWidget {
     );
   }
 
-  static const _sections = <({String title, Map<String, String> fields})>[
+  /// Web accordion tabs + field labels from `PAGES.FUND-SERVICE-QUERY.MESSAGES`.
+  static const panels = <({String title, List<InquiryFieldSpec> specs})>[
     (
       title: 'بيانات الفرع',
-      fields: {
-        'branchName': 'الفرع',
-        'bmCodeName': 'مدير الفرع',
-        'tlCodeName': 'قائد الفريق',
-        'loCodeName': 'مسؤول التمويل',
-        'telerName': 'Tele-sales',
-      },
+      specs: [
+        InquiryFieldSpec('إسم الفرع', [
+          'branchName',
+          'createdBrNameAr',
+          'brNameAr',
+          'brNameEn',
+        ]),
+        InquiryFieldSpec('مدير الفرع', ['bmCodeName']),
+        InquiryFieldSpec('رئيس الفريق', ['tlCodeName']),
+        InquiryFieldSpec('مسؤل التمويل', ['loCodeName', 'loName']),
+        InquiryFieldSpec('الصراف', ['telerName']),
+      ],
     ),
     (
       title: 'بيانات العميل',
-      fields: {
-        'custName': 'اسم العميل',
-        'custno': 'رقم العميل',
-        'custId': 'رقم البطاقة',
-        'renewDescr': 'تجديد',
-      },
+      specs: [
+        InquiryFieldSpec('إسم العميل', ['custName']),
+        InquiryFieldSpec('كود العميل', ['custno']),
+        InquiryFieldSpec('هوية العميل', ['custId', 'custIdno', 'idno']),
+        InquiryFieldSpec('نوع العميل', ['renewDescr']),
+      ],
     ),
     (
       title: 'بيانات التمويل',
-      fields: {
-        'serviceId': 'رقم التمويل',
-        'loanName': 'المنتج',
-        'promotionName': 'العرض',
-        'srvStatusName': 'حالة التمويل',
-        'layerName': 'الطبقة',
-        'groupId': 'المجموعة',
-        'prodName': 'نوع المنتج',
-        'merchantName': 'التاجر',
-        'legalActionDescr': 'إجراء قانوني',
-        'issueSrcDescr': 'مصدر الإصدار',
-        'disbursementStatus': 'حالة الصرف',
-        'fundingSourceDescr': 'مصدر التمويل',
-        'insLifeCoDescr': 'تأمين على الحياة',
-        'insDebtCoDescr': 'تأمين على الدين',
-        'archiveCode': 'كود الأرشيف',
-      },
+      specs: [
+        InquiryFieldSpec('رقم التمويل', ['serviceId']),
+        InquiryFieldSpec('المنتج التمويلي', [
+          'loanName',
+          'loanNameAr',
+          'loanTypeNameAr',
+        ]),
+        InquiryFieldSpec('العروض', ['promotionName']),
+        InquiryFieldSpec('حالة التمويل', [
+          'srvStatusName',
+          'financeStatus',
+          'statusName',
+        ]),
+        InquiryFieldSpec('الشريحة', ['layerName']),
+        InquiryFieldSpec('رقم المجموعة', ['groupId']),
+        InquiryFieldSpec('نوع التمويل', ['prodName', 'prodNameAr']),
+        InquiryFieldSpec('اسم التاجر', ['merchantName']),
+        InquiryFieldSpec('الحالة القضائية', ['legalActionDescr']),
+        InquiryFieldSpec('وسيلة الصرف', ['issueSrcDescr']),
+        InquiryFieldSpec('حاله الصرف', ['disbursementStatus']),
+        InquiryFieldSpec('التسهيل البنكي', ['fundingSourceDescr']),
+        InquiryFieldSpec('شركة التأمين على الحياه', ['insLifeCoDescr']),
+        InquiryFieldSpec('شركة التأمين على التمويل', ['insDebtCoDescr']),
+        InquiryFieldSpec('كود الارشيف', ['archiveCode']),
+      ],
     ),
     (
-      title: 'بيانات المنح',
-      fields: {
-        'approveValue': 'المبلغ المعتمد',
-        'addedValue': 'القيمة المضافة',
-        'profitValue': 'قيمة الربح',
-        'kstAmt': 'قيمة القسط',
-        'totalAmount': 'إجمالي المبلغ',
-        'requiredValue': 'المبلغ المطلوب',
-        'netDeliverToCust': 'صافي للعميل',
-        'noOfKsts': 'عدد الأقساط',
-        'noOfMonths': 'عدد الشهور',
-        'rate': 'النسبة',
-        'issueDate': 'تاريخ الإصدار',
-        'openDate': 'تاريخ الفتح',
-        'fkstDate': 'أول قسط',
-        'lkstDate': 'آخر قسط',
-        'expireDate': 'تاريخ الانتهاء',
-      },
+      title: 'بيانات التمويل الممنوح',
+      specs: [
+        InquiryFieldSpec('مبلغ الموافقة', ['approveValue']),
+        InquiryFieldSpec('إجمالي المصاريف', ['addedValue']),
+        InquiryFieldSpec('قيمة العائد', ['profitValue']),
+        InquiryFieldSpec('إجمالي القسط', ['kstAmt', 'kstValue']),
+        InquiryFieldSpec('إجمالي التمويل', [
+          'totalAmount',
+          'fundingTotalAmount',
+          'pTotalAmount',
+        ]),
+        InquiryFieldSpec('المبلغ المطلوب', ['requiredValue', 'reqAmount']),
+        InquiryFieldSpec('صافى المبلغ المسلم للعميل', [
+          'netDeliverToCust',
+          'pNetDeliveredToCust',
+        ]),
+        InquiryFieldSpec('عدد الاقساط', ['noOfKsts', 'reqNoOfksts']),
+        InquiryFieldSpec('مدة التمويل بالشهور', ['noOfMonths']),
+        InquiryFieldSpec('نسبة العائد', ['rate']),
+        InquiryFieldSpec('تاريخ الاصدار', ['issueDate']),
+        InquiryFieldSpec('تاريخ انشاء الطلب', ['openDate']),
+        InquiryFieldSpec('تاريخ اول قسط', ['fkstDate']),
+        InquiryFieldSpec('تاريخ اخر قسط', ['lkstDate']),
+        InquiryFieldSpec('تاريخ انتهاء التمويل', ['expireDate']),
+      ],
     ),
     (
-      title: 'بيانات القرض',
-      fields: {
-        'balValue': 'الرصيد',
-        'debtDues': 'المستحقات',
-        'remBalKstAmt': 'متبقي أصل القسط',
-        'remIntKstAmt': 'متبقي فائدة القسط',
-        'remPenaltyAmt': 'متبقي الغرامات',
-        'lateNoOfKst': 'أقساط متأخرة',
-        'lateKstDate': 'تاريخ التأخير',
-        'remNoOfKst': 'أقساط متبقية',
-        'totalDebts': 'إجمالي المديونية',
-        'customerCrBalance': 'رصيد دائن',
-        'netTotalDebts': 'صافي المديونية',
-        'entryAppCommAmt': 'عمولة',
-        'customerPindingBalance': 'رصيد معلق',
-      },
+      title: 'تفاصيل المديونية',
+      specs: [
+        InquiryFieldSpec('الرصيد القائم', ['balValue', 'currentBalance']),
+        InquiryFieldSpec('المبالغ المستحقة', ['debtDues', 'dueBalance']),
+        InquiryFieldSpec('رصيد الاصل الغير مسدد', ['remBalKstAmt']),
+        InquiryFieldSpec('رصيد الفائدة الغير مسددة', ['remIntKstAmt']),
+        InquiryFieldSpec('قيمة الغرامات المحتسبه', ['remPenaltyAmt']),
+        InquiryFieldSpec('عدد الأقساط المتاخره', ['lateNoOfKst']),
+        InquiryFieldSpec('تاريخ استحقاق اول قسط', ['lateKstDate']),
+        InquiryFieldSpec('عدد الأقساط المتبقية', ['remNoOfKst']),
+        InquiryFieldSpec('اجمالي المبلغ المطلوب لاغلاق التمويل', [
+          'totalDebts',
+        ]),
+        InquiryFieldSpec('رصيد المبالغ المقدمة', ['customerCrBalance']),
+        InquiryFieldSpec('صافي المبلغ المطلوب لإغلاق التمويل', [
+          'netTotalDebts',
+        ]),
+        InquiryFieldSpec('المسدد من عمولة طلب التمويل', ['entryAppCommAmt']),
+        InquiryFieldSpec('رصيد السداد المعلق', ['customerPindingBalance']),
+      ],
     ),
     (
-      title: 'سداد معجل',
-      fields: {
-        'earlyPaymentRequired': 'المطلوب للسداد المعجل',
-        'netEarlyPaymentRequired': 'صافي السداد المعجل',
-        'earlyIntRate': 'نسبة الفائدة',
-        'earlyIntAmt': 'قيمة الفائدة',
-        'earlyKstIntPayed': 'فائدة أقساط مسددة',
-      },
+      title: 'مديونية السداد المبكر',
+      specs: [
+        InquiryFieldSpec('اجمالي المبلغ المطلوب للسداد المبكر', [
+          'earlyPaymentRequired',
+        ]),
+        InquiryFieldSpec('صافي المبلغ المطلوب للسداد المبكر', [
+          'netEarlyPaymentRequired',
+        ]),
+        InquiryFieldSpec('فائدة السداد المبكر', ['earlyIntRate']),
+        InquiryFieldSpec('قيمة فائدة السداد المبكر', ['earlyIntAmt']),
+        InquiryFieldSpec('فوائد القسط المدفوعة', ['earlyKstIntPayed']),
+      ],
     ),
     (
-      title: 'Offloading',
-      fields: {
-        'offloadingTypeDescr': 'النوع',
-        'offloadingBanknoName': 'البنك',
-        'offloadingAppdate': 'تاريخ الطلب',
-      },
+      title: 'بيانات الحوالة',
+      specs: [
+        InquiryFieldSpec('إحالة الحق', ['offloadingTypeDescr']),
+        InquiryFieldSpec('بنك الحوالة', ['offloadingBanknoName']),
+        InquiryFieldSpec('تاريخ الحوالة', ['offloadingAppdate']),
+      ],
     ),
     (
-      title: 'شطب / تنفيذ',
-      fields: {
-        'writoffType': 'نوع الشطب',
-        'writoffDescription': 'الوصف',
-        'writoffDate': 'التاريخ',
-        'writoffBal': 'الرصيد',
-        'writoffTotDebt': 'إجمالي الدين',
-        'writoffPayments': 'المدفوعات',
-        'writoffUnpaiedNoKst': 'أقساط غير مسددة',
-      },
+      title: 'بيانات الاعدام',
+      specs: [
+        InquiryFieldSpec('نوع الاعدام', ['writoffType']),
+        InquiryFieldSpec('تفاصيل الاعدام', ['writoffDescription']),
+        InquiryFieldSpec('تاريخ الاعدام', ['writoffDate']),
+        InquiryFieldSpec('الرصيد المعدم', ['writoffBal']),
+        InquiryFieldSpec('إجمالي المديونية المعدومة', ['writoffTotDebt']),
+        InquiryFieldSpec('سدادات بعد الاعدام', ['writoffPayments']),
+        InquiryFieldSpec('عدد الاقساط المعدومة', ['writoffUnpaiedNoKst']),
+      ],
     ),
     (
-      title: 'إعادة جدولة',
-      fields: {
-        'reschUpdateDate': 'تاريخ التحديث',
-        'reschExecuteDate': 'تاريخ التنفيذ',
-        'reschTotalAmount': 'المبلغ الإجمالي',
-        'reschCommAmount': 'العمولة',
-        'reschProfitAmount': 'الربح',
-      },
+      title: 'بيانات الجدولة',
+      specs: [
+        InquiryFieldSpec('تاريخ طباعه المستندات', ['reschUpdateDate']),
+        InquiryFieldSpec('تاريخ التنفيذ', ['reschExecuteDate']),
+        InquiryFieldSpec('القيمة المعاد جدولتها', ['reschTotalAmount']),
+        InquiryFieldSpec('قيمة عمولة الجدولة', ['reschCommAmount']),
+        InquiryFieldSpec('قيمة فوائد الجدولة', ['reschProfitAmount']),
+      ],
     ),
   ];
 
   @override
+  State<InquiryFundDataScene> createState() => _InquiryFundDataSceneState();
+}
+
+class _InquiryFundDataSceneState extends State<InquiryFundDataScene> {
+  /// First accordion (**بيانات الفرع**) open — same as web entry.
+  final Set<int> _expanded = {0};
+
+  @override
   Widget build(BuildContext context) {
-    final map = row.raw;
+    final map = widget.row.raw;
     return FlowScaffold(
       pageTitle: 'بيانات التمويل',
       pageIcon: Icons.description_outlined,
       onBack: () => Navigator.of(context).pop(),
       body: ColoredBox(
         color: AppColors.page,
-        child: ListView(
-          padding: EdgeInsets.fromLTRB(16.w, 8.h, 16.w, 24.h),
-          children: [
-            for (final section in _sections) ...[
-              _SectionCard(
-                title: section.title,
-                lines: [
-                  for (final e in section.fields.entries)
-                    (e.value, _InquiryFormat.value(map[e.key])),
+        child: Directionality(
+          textDirection: TextDirection.rtl,
+          child: ListView.separated(
+            padding: EdgeInsets.fromLTRB(16.w, 8.h, 16.w, 24.h),
+            itemCount: InquiryFundDataScene.panels.length,
+            separatorBuilder: (_, __) => SizedBox(height: 10.h),
+            itemBuilder: (context, index) {
+              final panel = InquiryFundDataScene.panels[index];
+              final expanded = _expanded.contains(index);
+              return _FundInquiryAccordion(
+                title: panel.title,
+                specs: panel.specs,
+                data: map,
+                expanded: expanded,
+                onHeaderTap: () => setState(() {
+                  if (_expanded.contains(index)) {
+                    _expanded.remove(index);
+                  } else {
+                    _expanded.add(index);
+                  }
+                }),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Web-style light-blue accordion header; shows **every** field (empty → —).
+class _FundInquiryAccordion extends StatelessWidget {
+  const _FundInquiryAccordion({
+    required this.title,
+    required this.specs,
+    required this.data,
+    required this.expanded,
+    required this.onHeaderTap,
+  });
+
+  final String title;
+  final List<InquiryFieldSpec> specs;
+  final Map<String, dynamic> data;
+  final bool expanded;
+  final VoidCallback onHeaderTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(14.r),
+        border: Border.all(
+          color: expanded ? const Color(0xFF0369A1) : const Color(0xFFB8DCF5),
+          width: expanded ? 1.5 : 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.cardShadow,
+            blurRadius: expanded ? 10.r : 6.r,
+            offset: Offset(0, 2.h),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Material(
+            color: expanded ? const Color(0xFF0369A1) : const Color(0xFFE7F3FC),
+            child: InkWell(
+              onTap: onHeaderTap,
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 14.h),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        textAlign: TextAlign.right,
+                        style: TextStyle(
+                          fontFamily: AppFonts.dinNextArabic,
+                          fontSize: 15.sp,
+                          fontWeight: FontWeight.w800,
+                          color: expanded
+                              ? AppColors.white
+                              : const Color(0xFF032F64),
+                        ),
+                      ),
+                    ),
+                    SizedBox(width: 8.w),
+                    AnimatedRotation(
+                      turns: expanded ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 200),
+                      child: Icon(
+                        Icons.expand_more,
+                        color: expanded ? AppColors.white : AppColors.accent,
+                        size: 26.r,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          AnimatedCrossFade(
+            firstChild: Padding(
+              padding: EdgeInsets.fromLTRB(14.w, 12.h, 14.w, 14.h),
+              child: Column(
+                children: [
+                  for (var i = 0; i < specs.length; i++) ...[
+                    if (i > 0) SizedBox(height: 10.h),
+                    InquiryReadonlyField(
+                      label: specs[i].label,
+                      value: specs[i].read(data),
+                    ),
+                  ],
                 ],
               ),
-              SizedBox(height: 12.h),
-            ],
-          ],
-        ),
+            ),
+            secondChild: const SizedBox.shrink(),
+            crossFadeState: expanded
+                ? CrossFadeState.showFirst
+                : CrossFadeState.showSecond,
+            duration: const Duration(milliseconds: 200),
+          ),
+        ],
       ),
     );
   }
@@ -201,9 +355,25 @@ class InquiryInstallmentsScene extends StatefulWidget {
 
 class _InquiryInstallmentsSceneState extends State<InquiryInstallmentsScene> {
   final _api = ServiceQueryApi();
+  static const _pageSize = 10;
+
   List<Map<String, dynamic>> _rows = [];
   String? _error;
   bool _loading = true;
+  int _pageIndex = 0;
+
+  int get _pageCount {
+    if (_rows.isEmpty) return 1;
+    return ((_rows.length - 1) ~/ _pageSize) + 1;
+  }
+
+  List<Map<String, dynamic>> get _pageRows {
+    if (_rows.isEmpty) return const [];
+    final start = _pageIndex * _pageSize;
+    if (start >= _rows.length) return const [];
+    final end = (start + _pageSize).clamp(0, _rows.length);
+    return _rows.sublist(start, end);
+  }
 
   @override
   void initState() {
@@ -215,15 +385,18 @@ class _InquiryInstallmentsSceneState extends State<InquiryInstallmentsScene> {
     setState(() {
       _loading = true;
       _error = null;
+      _pageIndex = 0;
     });
     try {
+      // Scene owns the spinner — skip global AppLoading overlay (avoids double loaders).
       final rows = await _api.premiums(
         status: widget.row.status,
         serviceId: widget.row.serviceId,
+        showGlobalLoading: false,
       );
       if (!mounted) return;
       setState(() {
-        _rows = rows;
+        _rows = _sortedInstallments(rows);
         _loading = false;
       });
     } catch (e) {
@@ -235,8 +408,25 @@ class _InquiryInstallmentsSceneState extends State<InquiryInstallmentsScene> {
     }
   }
 
+  /// Keep قسط 1 first (same as the web table default).
+  static List<Map<String, dynamic>> _sortedInstallments(
+    List<Map<String, dynamic>> rows,
+  ) {
+    final copy = [...rows];
+    int noOf(Map<String, dynamic> row) {
+      final raw = row['installmentNo'];
+      if (raw is num) return raw.toInt();
+      return int.tryParse('$raw'.trim()) ?? 1 << 30;
+    }
+
+    copy.sort((a, b) => noOf(a).compareTo(noOf(b)));
+    return copy;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final pageRows = _pageRows;
+    final pageCount = _pageCount;
     return FlowScaffold(
       pageTitle: 'بيانات الأقساط',
       pageIcon: Icons.calendar_month_outlined,
@@ -254,13 +444,137 @@ class _InquiryInstallmentsSceneState extends State<InquiryInstallmentsScene> {
                     style: TextStyle(fontFamily: AppFonts.dinNextArabic),
                   ),
                 )
-              : ListView.separated(
+              : ListView.builder(
                   padding: EdgeInsets.fromLTRB(16.w, 8.h, 16.w, 24.h),
-                  itemCount: _rows.length,
-                  separatorBuilder: (_, __) => SizedBox(height: 14.h),
-                  itemBuilder: (_, index) =>
-                      _InstallmentCard(row: _rows[index]),
+                  itemCount: pageRows.length + 1,
+                  itemBuilder: (_, index) {
+                    if (index < pageRows.length) {
+                      return Padding(
+                        padding: EdgeInsets.only(
+                          bottom: index == pageRows.length - 1 ? 0 : 14.h,
+                        ),
+                        child: _InstallmentCard(row: pageRows[index]),
+                      );
+                    }
+                    return Padding(
+                      padding: EdgeInsets.only(top: 14.h),
+                      child: _InstallmentsPaginationBar(
+                        pageIndex: _pageIndex,
+                        pageCount: pageCount,
+                        pageSize: _pageSize,
+                        totalRecords: _rows.length,
+                        onPrev: _pageIndex > 0
+                            ? () => setState(() => _pageIndex--)
+                            : null,
+                        onNext: _pageIndex < pageCount - 1
+                            ? () => setState(() => _pageIndex++)
+                            : null,
+                      ),
+                    );
+                  },
                 ),
+        ),
+      ),
+    );
+  }
+}
+
+class _InstallmentsPaginationBar extends StatelessWidget {
+  const _InstallmentsPaginationBar({
+    required this.pageIndex,
+    required this.pageCount,
+    required this.pageSize,
+    required this.totalRecords,
+    required this.onPrev,
+    required this.onNext,
+  });
+
+  final int pageIndex;
+  final int pageCount;
+  final int pageSize;
+  final int totalRecords;
+  final VoidCallback? onPrev;
+  final VoidCallback? onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    final start = totalRecords == 0 ? 0 : pageIndex * pageSize + 1;
+    final end = (start + pageSize - 1).clamp(0, totalRecords);
+    return Container(
+      padding: EdgeInsets.fromLTRB(14.w, 14.h, 14.w, 14.h),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(16.r),
+        border: Border.all(color: AppColors.cardBorder),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.cardShadow,
+            blurRadius: 10.r,
+            offset: Offset(0, 3.h),
+          ),
+        ],
+      ),
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'عرض $start–$end من $totalRecords',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: AppFonts.dinNextArabic,
+                fontSize: 12.sp,
+                fontWeight: FontWeight.w600,
+                color: AppColors.fieldLabel,
+              ),
+            ),
+            SizedBox(height: 10.h),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: onPrev,
+                    icon: Icon(Icons.chevron_right_rounded, size: 20.r),
+                    label: Text(
+                      'السابق',
+                      style: TextStyle(
+                        fontFamily: AppFonts.dinNextArabic,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(width: 10.w),
+                Text(
+                  '${pageIndex + 1} / $pageCount',
+                  style: TextStyle(
+                    fontFamily: AppFonts.dinNextArabic,
+                    fontSize: 14.sp,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF032F64),
+                  ),
+                ),
+                SizedBox(width: 10.w),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: onNext,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                    ),
+                    icon: Icon(Icons.chevron_left_rounded, size: 20.r),
+                    label: Text(
+                      'التالي',
+                      style: TextStyle(
+                        fontFamily: AppFonts.dinNextArabic,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -276,7 +590,7 @@ class _InstallmentCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final detailRows = _InquiryFormat.list(row['details']);
     final installmentNo = _InquiryFormat.value(row['installmentNo']);
-    final installmentDate = _InquiryFormat.value(row['installmentDate']);
+    final installmentDate = _InquiryFormat.date(row['installmentDate']);
     final total = _InstallmentUi.amount(row['installmentAmount']);
     final paid = _InstallmentUi.amount(row['installmentPayedAmount']);
     final lateDays = _InstallmentUi.intValue(row['noOfDaysLate']);
@@ -349,15 +663,7 @@ class _InstallmentCard extends StatelessWidget {
                             ),
                             SizedBox(width: 4.w),
                             Expanded(
-                              child: Text(
-                                installmentDate,
-                                style: TextStyle(
-                                  fontFamily: AppFonts.dinNextArabic,
-                                  fontSize: 13.sp,
-                                  fontWeight: FontWeight.w600,
-                                  color: const Color(0xFF6B7280),
-                                ),
-                              ),
+                              child: _InquiryDateText(installmentDate),
                             ),
                           ],
                         ),
@@ -459,8 +765,9 @@ class _InstallmentCard extends StatelessWidget {
                   Expanded(
                     child: _InstallmentMetric(
                       label: 'تاريخ السداد',
-                      value: _InquiryFormat.value(row['installmentPayedDate']),
+                      value: _InquiryFormat.date(row['installmentPayedDate']),
                       icon: Icons.check_circle_outline,
+                      ltrValue: true,
                     ),
                   ),
                   SizedBox(width: 10.w),
@@ -631,12 +938,14 @@ class _InstallmentMetric extends StatelessWidget {
     required this.value,
     required this.icon,
     this.highlight = false,
+    this.ltrValue = false,
   });
 
   final String label;
   final String value;
   final IconData icon;
   final bool highlight;
+  final bool ltrValue;
 
   @override
   Widget build(BuildContext context) {
@@ -676,19 +985,66 @@ class _InstallmentMetric extends StatelessWidget {
             ],
           ),
           SizedBox(height: 6.h),
-          Text(
-            value,
-            textAlign: TextAlign.right,
-            style: TextStyle(
-              fontFamily: AppFonts.dinNextArabic,
-              fontSize: 14.sp,
-              fontWeight: FontWeight.w800,
+          if (ltrValue)
+            _InquiryDateText(
+              value,
+              align: TextAlign.right,
               color: highlight
                   ? const Color(0xFF9A3412)
                   : const Color(0xFF032F64),
+              size: 14.sp,
+              weight: FontWeight.w800,
+            )
+          else
+            Text(
+              value,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontFamily: AppFonts.dinNextArabic,
+                fontSize: 14.sp,
+                fontWeight: FontWeight.w800,
+                color: highlight
+                    ? const Color(0xFF9A3412)
+                    : const Color(0xFF032F64),
+              ),
             ),
-          ),
         ],
+      ),
+    );
+  }
+}
+
+/// Fusion dates are `dd/MM/yyyy`. Force LTR + Latin digits so RTL/DIN cannot
+/// visually scramble day/month (e.g. 07/11 looking like 11/11).
+class _InquiryDateText extends StatelessWidget {
+  const _InquiryDateText(
+    this.value, {
+    this.align = TextAlign.right,
+    this.color = const Color(0xFF6B7280),
+    this.size,
+    this.weight = FontWeight.w600,
+  });
+
+  final String value;
+  final TextAlign align;
+  final Color color;
+  final double? size;
+  final FontWeight weight;
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: Text(
+        value,
+        textAlign: align,
+        style: TextStyle(
+          fontFamily: 'Roboto',
+          fontSize: size ?? 13.sp,
+          fontWeight: weight,
+          color: color,
+          letterSpacing: 0.2,
+        ),
       ),
     );
   }
@@ -1310,6 +1666,46 @@ class _InquiryFormat {
     if (v == null || v == 'null') return '—';
     final t = '$v'.trim();
     return t.isEmpty ? '—' : t;
+  }
+
+  /// Fusion inquiry dates: keep `dd/MM/yyyy` as-is (no timezone shift).
+  static String date(dynamic v) {
+    if (v == null || v == 'null') return '—';
+    if (v is DateTime) {
+      final d = v.day.toString().padLeft(2, '0');
+      final m = v.month.toString().padLeft(2, '0');
+      return '$d/$m/${v.year}';
+    }
+    final raw = '$v'.trim();
+    if (raw.isEmpty) return '—';
+
+    // Already Fusion: 07/11/2026 or 07/11/2026 00:00:00
+    final slash = RegExp(r'^(\d{1,2})/(\d{1,2})/(\d{4})');
+    final slashMatch = slash.firstMatch(raw);
+    if (slashMatch != null) {
+      final day = slashMatch.group(1)!.padLeft(2, '0');
+      final month = slashMatch.group(2)!.padLeft(2, '0');
+      final year = slashMatch.group(3)!;
+      return '$day/$month/$year';
+    }
+
+    // ISO calendar date only — do not use DateTime.parse (UTC shifts).
+    final iso = RegExp(r'^(\d{4})-(\d{2})-(\d{2})');
+    final isoMatch = iso.firstMatch(raw);
+    if (isoMatch != null) {
+      return '${isoMatch.group(3)}/${isoMatch.group(2)}/${isoMatch.group(1)}';
+    }
+
+    if (v is num) {
+      final ms = v.toInt();
+      // Treat as epoch millis; use UTC calendar day to match Fusion server dates.
+      final dt = DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true);
+      final d = dt.day.toString().padLeft(2, '0');
+      final m = dt.month.toString().padLeft(2, '0');
+      return '$d/$m/${dt.year}';
+    }
+
+    return raw;
   }
 
   static List<Map<String, dynamic>> list(dynamic raw) {

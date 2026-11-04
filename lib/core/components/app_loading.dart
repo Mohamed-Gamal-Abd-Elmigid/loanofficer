@@ -4,22 +4,31 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:loanofficer/core/theme/app_colors.dart';
 
-/// Full-screen loader for in-flight API calls. Nested calls share one overlay.
+/// API helper. Prefer screen-local spinners when opening a page.
+///
+/// - [watch] — runs the action with **no** global overlay (avoids double loaders).
+/// - [blocking] — full-screen overlay for saves/submits that have no local spinner.
 class AppLoading {
   AppLoading._();
 
   static final ValueNotifier<int> pending = ValueNotifier<int>(0);
 
+  /// Runs [action] without the global overlay.
   static Future<T> watch<T>(Future<T> Function() action) {
+    return _run(action);
+  }
+
+  /// Full-screen loader for mutations (save / approve / delete, …).
+  static Future<T> blocking<T>(Future<T> Function() action) {
     final phase = SchedulerBinding.instance.schedulerPhase;
     final building =
         phase == SchedulerPhase.persistentCallbacks ||
         phase == SchedulerPhase.midFrameMicrotasks;
-    if (!building) return _watchNow(action);
+    if (!building) return _blockNow(action);
 
     final result = Completer<T>();
     SchedulerBinding.instance.addPostFrameCallback((_) {
-      _watchNow(action).then(
+      _blockNow(action).then(
         result.complete,
         onError: (Object error, StackTrace stack) {
           result.completeError(error, stack);
@@ -29,7 +38,9 @@ class AppLoading {
     return result.future;
   }
 
-  static Future<T> _watchNow<T>(Future<T> Function() action) async {
+  static Future<T> _run<T>(Future<T> Function() action) => action();
+
+  static Future<T> _blockNow<T>(Future<T> Function() action) async {
     pending.value++;
     try {
       return await action();

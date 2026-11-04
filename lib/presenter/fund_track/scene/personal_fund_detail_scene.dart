@@ -56,6 +56,7 @@ class _PersonalFundDetailSceneState extends State<PersonalFundDetailScene>
 
   List<_TabMeta> _tabMetas = const [];
   final _loaded = <String>{};
+  final _loadingTabs = <String>{};
 
   List<Map<String, dynamic>> _grantors = [];
   List<Map<String, dynamic>> _inkind = [];
@@ -98,11 +99,15 @@ class _PersonalFundDetailSceneState extends State<PersonalFundDetailScene>
 
   void _onTabChanged() {
     final c = _tabs;
-    if (c == null || c.indexIsChanging) return;
+    if (c == null) return;
+    // Start fetch as soon as the tab index changes (don't wait for animation).
     final idx = c.index;
     if (idx < 0 || idx >= _tabMetas.length) return;
     _tabMetas[idx].load?.call();
   }
+
+  bool _tabLoading(String id) =>
+      _loadingTabs.contains(id) || !_loaded.contains(id);
 
   Future<void> _loadCore() async {
     try {
@@ -144,9 +149,16 @@ class _PersonalFundDetailSceneState extends State<PersonalFundDetailScene>
   }
 
   Future<void> _loadOnce(String id, Future<void> Function() fn) async {
-    if (_loaded.contains(id)) return;
-    await fn();
-    _loaded.add(id);
+    if (_loaded.contains(id) || _loadingTabs.contains(id)) return;
+    _loadingTabs.add(id);
+    if (mounted) setState(() {});
+    try {
+      await fn();
+      _loaded.add(id);
+    } finally {
+      _loadingTabs.remove(id);
+      if (mounted) setState(() {});
+    }
   }
 
   Future<void> _loadWarranties() => _loadOnce('warr', () async {
@@ -275,6 +287,9 @@ class _PersonalFundDetailSceneState extends State<PersonalFundDetailScene>
   @override
   Widget build(BuildContext context) {
     final tabs = _tabs;
+    final tabItems = [
+      for (final m in _tabMetas) (id: m.id, label: m.label),
+    ];
     return FlowScaffold(
       hideBrandHeader: true,
       pageTitle: 'طلب تمويل فردي',
@@ -284,63 +299,62 @@ class _PersonalFundDetailSceneState extends State<PersonalFundDetailScene>
           ? const SizedBox.shrink()
           : ColoredBox(
               color: AppColors.page,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _OrderHeaderCard(
-                    order: widget.order,
-                    fund: _fund,
-                    patch: _patch,
-                  ),
-                  if (_patch != null)
-                    Padding(
-                      padding: EdgeInsets.fromLTRB(16.w, 8.h, 16.w, 0),
-                      child: PersonalFundWorkflowActions(
-                        authority: _authority,
-                        patch: _patch!,
-                        api: _api,
-                        stageId: _patch!.stageId,
-                        serviceId: _patch!.serviceId,
-                        onBeforeApprove: _saveFundDataSilent,
-                        onSuccess: () {
-                          _toast('تم تنفيذ الإجراء');
-                          if (mounted) Navigator.of(context).pop();
-                        },
-                        onError: _toast,
+              // Order card collapses on scroll; tab bar stays pinned. Scroll up
+              // again (including from the tab strip) to reveal the card.
+              child: NestedScrollView(
+                floatHeaderSlivers: true,
+                headerSliverBuilder: (context, innerBoxIsScrolled) {
+                  return [
+                    SliverToBoxAdapter(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _OrderHeaderCard(
+                            order: widget.order,
+                            fund: _fund,
+                            patch: _patch,
+                          ),
+                          if (_patch != null)
+                            Padding(
+                              padding:
+                                  EdgeInsets.fromLTRB(16.w, 8.h, 16.w, 0),
+                              child: PersonalFundWorkflowActions(
+                                authority: _authority,
+                                patch: _patch!,
+                                api: _api,
+                                stageId: _patch!.stageId,
+                                serviceId: _patch!.serviceId,
+                                onBeforeApprove: _saveFundDataSilent,
+                                onSuccess: () {
+                                  _toast('تم تنفيذ الإجراء');
+                                  if (mounted) {
+                                    Navigator.of(context).pop();
+                                  }
+                                },
+                                onError: _toast,
+                              ),
+                            ),
+                          SizedBox(height: 4.h),
+                        ],
                       ),
                     ),
-                  SizedBox(height: 8.h),
-                  PersonalFundWizardTabBar(
-                    controller: tabs,
-                    tabs: [
-                      for (final m in _tabMetas) (id: m.id, label: m.label),
-                    ],
-                  ),
-                  Expanded(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: AppColors.page,
-                        borderRadius: BorderRadius.vertical(
-                          top: Radius.circular(18.r),
-                        ),
-                        border: Border(
-                          top: BorderSide(color: AppColors.cardBorder),
-                        ),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.vertical(
-                          top: Radius.circular(18.r),
-                        ),
-                        child: TabBarView(
-                          controller: tabs,
-                          children: [
-                            for (final m in _tabMetas) _buildTab(m),
-                          ],
-                        ),
+                    SliverPersistentHeader(
+                      pinned: true,
+                      floating: true,
+                      delegate: PersonalFundPinnedTabBarDelegate(
+                        controller: tabs,
+                        tabs: tabItems,
+                        elevated: innerBoxIsScrolled,
                       ),
                     ),
-                  ),
-                ],
+                  ];
+                },
+                body: TabBarView(
+                  controller: tabs,
+                  children: [
+                    for (final m in _tabMetas) _buildTab(m),
+                  ],
+                ),
               ),
             ),
     );
@@ -372,6 +386,7 @@ class _PersonalFundDetailSceneState extends State<PersonalFundDetailScene>
           api: _api,
           initialGrantors: _grantors,
           initialInkind: _inkind,
+          loading: _tabLoading('warr'),
           onReload: _reloadWarranties,
         );
       case 'docs':
@@ -387,6 +402,7 @@ class _PersonalFundDetailSceneState extends State<PersonalFundDetailScene>
           prodType: '${_fund['prodType'] ?? '1'}',
           stepId: _patch?.stepId ?? '1',
           refusedFlow: _previousStatus == 'REFUSED',
+          loading: _tabLoading('docs'),
           onReload: _reloadDocuments,
         );
       case 'refuse':
@@ -396,6 +412,7 @@ class _PersonalFundDetailSceneState extends State<PersonalFundDetailScene>
           api: _api,
           initialRows: _refusals,
           refusedFlow: _previousStatus == 'REFUSED',
+          loading: _tabLoading('refuse'),
           onReload: _reloadRefusal,
         );
       default:

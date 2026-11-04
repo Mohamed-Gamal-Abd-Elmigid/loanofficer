@@ -78,6 +78,7 @@ class PersonalFundRefusalTab extends StatefulWidget {
     required this.initialRows,
     required this.refusedFlow,
     required this.onReload,
+    this.loading = false,
   });
 
   final String ticketId;
@@ -85,6 +86,7 @@ class PersonalFundRefusalTab extends StatefulWidget {
   final PersonalFundApi api;
   final List<Map<String, dynamic>> initialRows;
   final bool refusedFlow;
+  final bool loading;
   final Future<void> Function() onReload;
 
   @override
@@ -196,12 +198,20 @@ class _PersonalFundRefusalTabState extends State<PersonalFundRefusalTab> {
   @override
   Widget build(BuildContext context) {
     if (!widget.authority.refusalTab) {
-      return ColoredBox(
-        color: AppColors.page,
+      return personalFundScrollableEmpty(
+        storageKey: 'personal-fund-tab-refuse-empty',
         child: PersonalFundEmptyState(
           icon: personalFundTabIcon('refuse'),
           message: 'أسباب الرفض غير متاحة',
           accent: personalFundTabAccent('refuse'),
+        ),
+      );
+    }
+    if (widget.loading) {
+      return personalFundScrollableEmpty(
+        storageKey: 'personal-fund-tab-refuse-loading',
+        child: const Center(
+          child: CircularProgressIndicator(color: AppColors.primary),
         ),
       );
     }

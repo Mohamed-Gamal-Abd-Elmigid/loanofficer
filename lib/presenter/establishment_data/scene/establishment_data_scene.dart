@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil_plus/flutter_screenutil_plus.dart';
 import 'package:loanofficer/core/api/api_exception.dart';
+import 'package:loanofficer/core/api/client_api.dart';
+import 'package:loanofficer/core/api/organization_lookups_api.dart';
 import 'package:loanofficer/core/api/personal_fund_api.dart';
 import 'package:loanofficer/core/theme/app_colors.dart';
 import 'package:loanofficer/core/validation/fmc_validation.dart';
@@ -214,13 +216,18 @@ class EstablishmentOrgOption {
   }
 }
 
-/// Fields locked when editing an existing CIF organization.
-const _lockedOnEdit = {
+/// Always dimmed like the web org modal (auto-filled / not user-editable).
+const _alwaysLocked = {
   'orgId',
   'econCode1Descr',
   'econCode2Descr',
   'custIdno',
   'ownerName',
+};
+
+/// Extra fields locked when editing an existing CIF organization.
+const _lockedOnEdit = {
+  ..._alwaysLocked,
 };
 
 const _partnerFieldKeys = [
@@ -268,6 +275,8 @@ class _EstablishmentDataSceneState
         > {
   final _store = FormStore();
   final _api = PersonalFundApi();
+  final _lookupsApi = OrganizationLookupsApi();
+  final _clientApi = ClientApi();
   bool _review = false;
   bool _showErrors = false;
   /// Collapsed titles by default; tap opens one section (accordion).
@@ -276,6 +285,16 @@ class _EstablishmentDataSceneState
   String? _selectedOrgId;
   bool _orgBusy = false;
   final List<FormStore> _partnerStores = [];
+
+  List<OrgLookupItem> _orgTypes = const [];
+  List<OrgLookupItem> _economy3 = const [];
+  List<OrgLookupItem> _companyCategories = const [];
+  List<OrgLookupItem> _placeTypes = const [];
+  List<OrgLookupItem> _placeOwnerships = const [];
+  List<AddressPlace> _states = const [];
+  List<AddressPlace> _cities = const [];
+  List<AddressPlace> _villages = const [];
+  bool _lookupsBusy = false;
 
   static const _keys = [
     'orgId',
@@ -334,10 +353,10 @@ class _EstablishmentDataSceneState
     'villageCode',
   ];
 
-  bool get _canSelectExisting =>
-      widget.allowSelectExisting ||
-      widget.nationalId != null ||
-      widget.organizations.isNotEmpty;
+  /// Only when the parent explicitly allows picking an existing org.
+  /// Do not infer from [nationalId] — web create/add shows no org list for a
+  /// customer who has not added a منشأة yet.
+  bool get _canSelectExisting => widget.allowSelectExisting;
 
   bool get _editExisting {
     if (widget.viewOnly) return false;
@@ -346,7 +365,9 @@ class _EstablishmentDataSceneState
   }
 
   bool _isLocked(String key) =>
-      widget.viewOnly || (_editExisting && _lockedOnEdit.contains(key));
+      widget.viewOnly ||
+      _alwaysLocked.contains(key) ||
+      (_editExisting && _lockedOnEdit.contains(key));
 
   @override
   void initState() {
@@ -364,14 +385,107 @@ class _EstablishmentDataSceneState
         (initial['custIdno'] ?? '').trim().isEmpty) {
       _store.field('custIdno', widget.nationalId!);
     }
-    // Existing org (عرض / تعديل): start as section titles only.
-    // New org: open partners as a light entry hint.
-    if (!widget.viewOnly && !_review && !widget.editExisting) {
-      _open.add('partners');
-    }
     if (!widget.viewOnly && _canSelectExisting && _organizations.isEmpty) {
       _loadOrganizations();
     }
+    if (!widget.viewOnly) {
+      _loadLookups();
+      _ensureOwnerPrefill();
+    }
+  }
+
+  Future<void> _ensureOwnerPrefill() async {
+    final id = (_store.text('custIdno').isNotEmpty
+            ? _store.text('custIdno')
+            : (widget.nationalId ?? ''))
+        .trim();
+    if (id.length != 14) return;
+    if (_store.text('custIdno').isEmpty) {
+      _store.field('custIdno').text = id;
+    }
+    if (_store.text('ownerName').trim().isNotEmpty) return;
+    try {
+      final names = await _clientApi.customerNames(id);
+      if (!mounted || names.isEmpty) return;
+      final fullName = (names.first['fullName'] ?? '').trim();
+      if (fullName.isEmpty) return;
+      setState(() => _store.field('ownerName').text = fullName);
+    } catch (_) {}
+  }
+
+  Future<void> _loadLookups() async {
+    setState(() => _lookupsBusy = true);
+    try {
+      final results = await Future.wait([
+        _lookupsApi.orgTypes(),
+        _lookupsApi.economy3(),
+        _lookupsApi.companyCategories(),
+        _lookupsApi.placeTypes(),
+        _lookupsApi.placeOwnerships(),
+        _clientApi.customerFormLookups(),
+      ]);
+      if (!mounted) return;
+      final clientLookups = results[5] as ClientLookups;
+      setState(() {
+        _orgTypes = results[0] as List<OrgLookupItem>;
+        _economy3 = results[1] as List<OrgLookupItem>;
+        _companyCategories = results[2] as List<OrgLookupItem>;
+        _placeTypes = results[3] as List<OrgLookupItem>;
+        _placeOwnerships = results[4] as List<OrgLookupItem>;
+        _states = clientLookups.states;
+        _lookupsBusy = false;
+      });
+      await _hydrateAddressLists();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _lookupsBusy = false);
+    }
+  }
+
+  Future<void> _hydrateAddressLists() async {
+    final stateName = _store.text('stateName').trim();
+    if (stateName.isEmpty || _states.isEmpty) return;
+    AddressPlace? state;
+    for (final item in _states) {
+      if (item.name == stateName) {
+        state = item;
+        break;
+      }
+    }
+    if (state == null) return;
+    if (_store.text('stateCode').isEmpty) {
+      _store.field('stateCode').text = state.stateId;
+    }
+    if (_store.text('regionId').isEmpty && state.regionId.isNotEmpty) {
+      _store.field('regionId').text = state.regionId;
+    }
+    try {
+      final cities = await _clientApi.cities(state);
+      if (!mounted) return;
+      setState(() => _cities = cities);
+      final cityName = _store.text('cityName').trim();
+      AddressPlace? city;
+      for (final item in cities) {
+        if (item.name == cityName) {
+          city = item;
+          break;
+        }
+      }
+      if (city == null) return;
+      if (_store.text('cityCode').isEmpty) {
+        _store.field('cityCode').text = city.cityId;
+      }
+      final villages = await _clientApi.villages(state: state, city: city);
+      if (!mounted) return;
+      setState(() => _villages = villages);
+      final villageName = _store.text('villageName').trim();
+      for (final item in villages) {
+        if (item.name == villageName && _store.text('villageCode').isEmpty) {
+          _store.field('villageCode').text = item.cityId;
+          break;
+        }
+      }
+    } catch (_) {}
   }
 
   @override
@@ -411,10 +525,26 @@ class _EstablishmentDataSceneState
   }
 
   void _removePartner(int index) {
-    if (widget.viewOnly || _partnerStores.length <= 1) return;
+    if (widget.viewOnly) return;
+    if (_partnerStores.length <= 1) {
+      // Keep one blank optional row instead of deleting the section.
+      setState(() {
+        for (final key in _partnerFieldKeys) {
+          _partnerStores.first.field(key).clear();
+        }
+      });
+      return;
+    }
     setState(() {
       _partnerStores.removeAt(index).dispose();
     });
+  }
+
+  bool _partnerRowHasData(FormStore store) {
+    for (final key in _partnerFieldKeys) {
+      if (store.text(key).trim().isNotEmpty) return true;
+    }
+    return false;
   }
 
   Future<void> _loadOrganizations() async {
@@ -448,7 +578,9 @@ class _EstablishmentDataSceneState
     _selectedOrgId = orgId.isEmpty ? null : orgId;
     _review = review;
     _open.clear();
-    if (!review) _open.add('partners');
+    _cities = const [];
+    _villages = const [];
+    _hydrateAddressLists();
   }
 
   Future<void> _selectExistingOrganization() async {
@@ -579,11 +711,13 @@ class _EstablishmentDataSceneState
     }
     final requiredKeys = [
       'name',
+      'orgTypeDescr',
+      'econCode3Descr',
       'orgDescr',
       'regNo',
       'practiceStartDate',
       'contactPhone',
-      'placeType',
+      'placeTypeDescr',
       'stateName',
       'cityName',
       'villageName',
@@ -599,14 +733,7 @@ class _EstablishmentDataSceneState
         return false;
       }
     }
-    for (final store in _partnerStores) {
-      if (FmcValidation.required(store.text('partnerName')) != null) {
-        return false;
-      }
-      if (FmcValidation.requiredNationalId(store.text('partnerId')) != null) {
-        return false;
-      }
-    }
+    // بيانات الشركاء optional — empty rows are ignored on save.
     return true;
   }
 
@@ -707,7 +834,8 @@ class _EstablishmentDataSceneState
     }
     final partners = [
       for (final store in _partnerStores)
-        {for (final key in _partnerFieldKeys) key: store.text(key)},
+        if (_partnerRowHasData(store))
+          {for (final key in _partnerFieldKeys) key: store.text(key)},
     ];
     // Keep first partner mirrored on root values for older callers.
     final first = partners.isEmpty ? const <String, String>{} : partners.first;
@@ -715,17 +843,33 @@ class _EstablishmentDataSceneState
       for (final key in _keys) key: _store.text(key),
       ...first,
     };
-    final info = EstablishmentInfo(values, partners: partners);
+    var info = EstablishmentInfo(values, partners: partners);
 
     final orgId = values['orgId']?.trim() ?? '';
-    if (saved && (_editExisting || orgId.isNotEmpty)) {
-      try {
+    try {
+      if (_editExisting || (saved && orgId.isNotEmpty)) {
+        // Web updateOrg — PUT
         await _api.saveOrganization(values: values, partners: partners);
-      } catch (error) {
-        if (!mounted) return;
-        showAuthError(context, error);
-        return;
+      } else {
+        // Web addOrg — POST so the منشأة is linked to the national ID
+        // and appears again when the create form reloads the customer.
+        final createdId = await _api.createOrganization(
+          values: values,
+          partners: partners,
+        );
+        info = EstablishmentInfo({
+          ...values,
+          'orgId': createdId,
+          if ((values['registerNumber'] ?? '').trim().isEmpty)
+            'registerNumber': (values['regNo'] ?? '').trim().isNotEmpty
+                ? values['regNo']!.trim()
+                : createdId,
+        }, partners: partners);
       }
+    } catch (error) {
+      if (!mounted) return;
+      showAuthError(context, error);
+      return;
     }
 
     if (!mounted) return;
@@ -794,30 +938,35 @@ class _EstablishmentDataSceneState
                             locked: true,
                           ),
                           SizedBox(height: 12.h),
-                          _labeled(
+                          _choice(
                             'نوع المنشأة',
-                            'orgTypeDescr',
-                            'نوع المنشأة',
+                            descrKey: 'orgTypeDescr',
+                            codeKey: 'orgType',
+                            hint: 'نوع المنشأة',
+                            items: _orgTypes,
                           ),
                           SizedBox(height: 12.h),
                           _labeled(
                             'القطاع الإقتصادي',
                             'econCode1Descr',
                             'القطاع الإقتصادي',
-                            locked: _editExisting,
+                            locked: true,
                           ),
                           SizedBox(height: 12.h),
                           _labeled(
                             'القطاع التحليلي',
                             'econCode2Descr',
                             'القطاع التحليلي',
-                            locked: _editExisting,
+                            locked: true,
                           ),
                           SizedBox(height: 12.h),
-                          _labeled(
+                          _choice(
                             'القطاع الفرعي',
-                            'econCode3Descr',
-                            'القطاع الفرعي',
+                            descrKey: 'econCode3Descr',
+                            codeKey: 'econCode3',
+                            hint: 'القطاع الفرعي',
+                            items: _economy3,
+                            onSelected: _onEconomy3Selected,
                           ),
                           SizedBox(height: 12.h),
                           _labeled(
@@ -878,10 +1027,12 @@ class _EstablishmentDataSceneState
                             optional: true,
                           ),
                           SizedBox(height: 12.h),
-                          _labeled(
+                          _choice(
                             'تصنيف حجم المؤسسة',
-                            'companyCategoryDescr',
-                            'تصنيف حجم المؤسسة',
+                            descrKey: 'companyCategoryDescr',
+                            codeKey: 'companyCategory',
+                            hint: 'تصنيف حجم المؤسسة',
+                            items: _companyCategories,
                             optional: true,
                           ),
                         ],
@@ -900,7 +1051,7 @@ class _EstablishmentDataSceneState
                             'الرقم القومي',
                             digits: true,
                             maxLength: 14,
-                            locked: _editExisting,
+                            locked: true,
                             rule: FmcValidation.requiredNationalId,
                           ),
                           SizedBox(height: 12.h),
@@ -908,7 +1059,7 @@ class _EstablishmentDataSceneState
                             'إسم صاحب المنشأة',
                             'ownerName',
                             'إسم صاحب المنشأة',
-                            locked: _editExisting,
+                            locked: true,
                           ),
                           SizedBox(height: 12.h),
                           _labeled(
@@ -972,16 +1123,20 @@ class _EstablishmentDataSceneState
                       onToggle: () => _toggle('location'),
                       child: Column(
                         children: [
-                          _labeled(
+                          _choice(
                             'نوع موقع المنشأة',
-                            'placeTypeDescr',
-                            'نوع موقع المنشأة',
+                            descrKey: 'placeTypeDescr',
+                            codeKey: 'placeType',
+                            hint: 'نوع موقع المنشأة',
+                            items: _placeTypes,
                           ),
                           SizedBox(height: 12.h),
-                          _labeled(
+                          _choice(
                             'ملكية موقع المنشأة',
-                            'placeOwnershipDescr',
-                            'ملكية موقع المنشأة',
+                            descrKey: 'placeOwnershipDescr',
+                            codeKey: 'placeOwnership',
+                            hint: 'ملكية موقع المنشأة',
+                            items: _placeOwnerships,
                             optional: true,
                           ),
                           SizedBox(height: 12.h),
@@ -1003,14 +1158,30 @@ class _EstablishmentDataSceneState
                       child: Column(
                         children: [
                           _detailBox('العنوان تفصيلي', _addressLine()),
-                          _labeled('المحافظة', 'stateName', 'المحافظة'),
+                          _addressChoice(
+                            'المحافظة',
+                            nameKey: 'stateName',
+                            hint: 'اختر المحافظة',
+                            options: _states.map((e) => e.name).toList(),
+                            onSelected: _onStateSelected,
+                          ),
                           SizedBox(height: 12.h),
-                          _labeled('المدينة', 'cityName', 'المدينة'),
+                          _addressChoice(
+                            'المدينة',
+                            nameKey: 'cityName',
+                            hint: 'اختر المدينة',
+                            options: _cities.map((e) => e.name).toList(),
+                            onSelected: _onCitySelected,
+                            enabled: _store.text('stateName').isNotEmpty,
+                          ),
                           SizedBox(height: 12.h),
-                          _labeled(
+                          _addressChoice(
                             'المركز / القسم',
-                            'villageName',
-                            'المركز / القسم',
+                            nameKey: 'villageName',
+                            hint: 'اختر المركز / القسم',
+                            options: _villages.map((e) => e.name).toList(),
+                            onSelected: _onVillageSelected,
+                            enabled: _store.text('cityName').isNotEmpty,
                           ),
                           SizedBox(height: 12.h),
                           _labeled(
@@ -1136,7 +1307,13 @@ class _EstablishmentDataSceneState
   Widget _partnerFields(FormStore store, int index) {
     return Column(
       children: [
-        _partnerLabeled(store, 'اسم الشريك', 'partnerName', 'ادخل اسم الشريك'),
+        _partnerLabeled(
+          store,
+          'اسم الشريك',
+          'partnerName',
+          'ادخل اسم الشريك',
+          optional: true,
+        ),
         SizedBox(height: 12.h),
         _partnerLabeled(
           store,
@@ -1145,7 +1322,12 @@ class _EstablishmentDataSceneState
           'ادخل الرقم القومي المكون من 14 رقم',
           digits: true,
           maxLength: 14,
-          rule: FmcValidation.requiredNationalId,
+          optional: true,
+          rule: (value) {
+            final text = (value ?? '').trim();
+            if (text.isEmpty) return null;
+            return FmcValidation.requiredNationalId(text);
+          },
         ),
         SizedBox(height: 12.h),
         FlowChoiceField(
@@ -1153,10 +1335,8 @@ class _EstablishmentDataSceneState
           value: store.text('partnerBirth'),
           hint: '00/00/0000',
           locked: widget.viewOnly,
-          error: widget.viewOnly
-              ? null
-              : _error(FmcValidation.required(store.text('partnerBirth'))),
-          reserveErrorSpace: widget.viewOnly ? false : _showErrors,
+          error: null,
+          reserveErrorSpace: false,
           onTap: () => _pickPartnerDate(store, index),
         ),
         SizedBox(height: 12.h),
@@ -1165,12 +1345,8 @@ class _EstablishmentDataSceneState
           value: store.text('partnerNationality'),
           hint: 'الجنسية',
           locked: widget.viewOnly,
-          error: widget.viewOnly
-              ? null
-              : _error(
-                  FmcValidation.required(store.text('partnerNationality')),
-                ),
-          reserveErrorSpace: widget.viewOnly ? false : _showErrors,
+          error: null,
+          reserveErrorSpace: false,
           onTap: () async {
             if (widget.viewOnly) return;
             final choice = await showChoiceDialog(
@@ -1191,6 +1367,7 @@ class _EstablishmentDataSceneState
           'مهامه بالشركة',
           'partnerRole',
           'ادخل مهامه بالشركة',
+          optional: true,
         ),
         SizedBox(height: 12.h),
         Row(
@@ -1202,6 +1379,7 @@ class _EstablishmentDataSceneState
                 'partnerShare',
                 'نسبة الشراكة',
                 digits: true,
+                optional: true,
               ),
             ),
             SizedBox(width: 10.w),
@@ -1212,6 +1390,7 @@ class _EstablishmentDataSceneState
                 'partnerValue',
                 'قيمة الشراكة',
                 digits: true,
+                optional: true,
               ),
             ),
           ],
@@ -1268,6 +1447,216 @@ class _EstablishmentDataSceneState
   }
 
   String? _error(String? message) => _showErrors ? message : null;
+
+  OrgLookupItem? _itemByLabel(List<OrgLookupItem> items, String label) {
+    final text = label.trim();
+    if (text.isEmpty) return null;
+    for (final item in items) {
+      if (item.label == text || item.code == text) return item;
+    }
+    return null;
+  }
+
+  Future<void> _onEconomy3Selected(OrgLookupItem item) async {
+    setState(() {
+      _store.field('econCode3').text = item.code;
+      _store.field('econCode3Descr').text = item.label;
+      _store.field('econCode1').clear();
+      _store.field('econCode1Descr').clear();
+      _store.field('econCode2').clear();
+      _store.field('econCode2Descr').clear();
+    });
+    try {
+      final parents = await _lookupsApi.economy3Enhanced(item.code);
+      if (!mounted || parents == null) return;
+      setState(() {
+        _store.field('econCode1').text = parents.code1;
+        _store.field('econCode1Descr').text =
+            parents.name1.isEmpty ? parents.code1 : parents.name1;
+        _store.field('econCode2').text = parents.code2;
+        _store.field('econCode2Descr').text =
+            parents.name2.isEmpty ? parents.code2 : parents.name2;
+        if (parents.name3.isNotEmpty) {
+          _store.field('econCode3Descr').text = parents.name3;
+        }
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _onStateSelected(String name) async {
+    AddressPlace? state;
+    for (final item in _states) {
+      if (item.name == name) {
+        state = item;
+        break;
+      }
+    }
+    setState(() {
+      _store.field('stateName').text = name;
+      _store.field('stateCode').text = state?.stateId ?? '';
+      _store.field('regionId').text = state?.regionId ?? '';
+      _store.field('cityName').clear();
+      _store.field('cityCode').clear();
+      _store.field('villageName').clear();
+      _store.field('villageCode').clear();
+      _cities = const [];
+      _villages = const [];
+    });
+    if (state == null) return;
+    try {
+      final cities = await _clientApi.cities(state);
+      if (!mounted) return;
+      setState(() => _cities = cities);
+    } catch (_) {}
+  }
+
+  Future<void> _onCitySelected(String name) async {
+    AddressPlace? state;
+    for (final item in _states) {
+      if (item.name == _store.text('stateName')) {
+        state = item;
+        break;
+      }
+    }
+    AddressPlace? city;
+    for (final item in _cities) {
+      if (item.name == name) {
+        city = item;
+        break;
+      }
+    }
+    setState(() {
+      _store.field('cityName').text = name;
+      _store.field('cityCode').text = city?.cityId ?? '';
+      _store.field('villageName').clear();
+      _store.field('villageCode').clear();
+      _villages = const [];
+    });
+    if (state == null || city == null) return;
+    try {
+      final villages = await _clientApi.villages(state: state, city: city);
+      if (!mounted) return;
+      setState(() => _villages = villages);
+    } catch (_) {}
+  }
+
+  void _onVillageSelected(String name) {
+    AddressPlace? village;
+    for (final item in _villages) {
+      if (item.name == name) {
+        village = item;
+        break;
+      }
+    }
+    setState(() {
+      _store.field('villageName').text = name;
+      _store.field('villageCode').text = village?.cityId ?? '';
+    });
+  }
+
+  Widget _choice(
+    String label, {
+    required String descrKey,
+    required String codeKey,
+    required String hint,
+    required List<OrgLookupItem> items,
+    Future<void> Function(OrgLookupItem item)? onSelected,
+    bool optional = false,
+  }) {
+    final locked = _isLocked(descrKey) || widget.viewOnly;
+    final value = _store.text(descrKey);
+    return FlowChoiceField(
+      label: label,
+      value: value,
+      hint: _lookupsBusy && items.isEmpty ? 'جاري التحميل…' : hint,
+      locked: locked,
+      error: locked || optional
+          ? null
+          : _error(FmcValidation.required(value)),
+      reserveErrorSpace: locked || optional ? false : _showErrors,
+      onTap: () async {
+        if (locked) return;
+        final labels = [for (final item in items) item.label];
+        if (labels.isEmpty) {
+          ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(
+              const SnackBar(content: Text('لا توجد خيارات متاحة حالياً')),
+            );
+          return;
+        }
+        final choice = await showChoiceDialog(
+          context: context,
+          title: label,
+          options: labels,
+          selected: value.isEmpty ? null : value,
+          searchable: true,
+          searchHint: 'بحث…',
+        );
+        if (!mounted || choice == null) return;
+        final item = _itemByLabel(items, choice);
+        if (item == null) return;
+        if (onSelected != null) {
+          await onSelected(item);
+          return;
+        }
+        setState(() {
+          _store.field(codeKey).text = item.code;
+          _store.field(descrKey).text = item.label;
+          if (codeKey == 'placeType') {
+            _store.field('location').text = item.label;
+          }
+        });
+      },
+    );
+  }
+
+  Widget _addressChoice(
+    String label, {
+    required String nameKey,
+    required String hint,
+    required List<String> options,
+    required void Function(String name) onSelected,
+    bool enabled = true,
+  }) {
+    final locked = widget.viewOnly || !enabled;
+    final value = _store.text(nameKey);
+    return FlowChoiceField(
+      label: label,
+      value: value,
+      hint: hint,
+      locked: locked,
+      error: locked ? null : _error(FmcValidation.required(value)),
+      reserveErrorSpace: locked ? false : _showErrors,
+      onTap: () async {
+        if (locked) return;
+        if (options.isEmpty) {
+          ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(
+              SnackBar(
+                content: Text(
+                  enabled
+                      ? 'لا توجد خيارات متاحة حالياً'
+                      : 'اختر المحافظة أولاً',
+                ),
+              ),
+            );
+          return;
+        }
+        final choice = await showChoiceDialog(
+          context: context,
+          title: label,
+          options: options,
+          selected: value.isEmpty ? null : value,
+          searchable: true,
+          searchHint: 'بحث…',
+        );
+        if (!mounted || choice == null) return;
+        onSelected(choice);
+      },
+    );
+  }
 
   Widget _dateField(String label, String key, {bool optional = false}) {
     final locked = _isLocked(key);
@@ -1344,8 +1733,16 @@ class _EstablishmentDataSceneState
     String hint, {
     bool digits = false,
     int? maxLength,
+    bool optional = true,
     String? Function(String? value)? rule,
   }) {
+    final value = store.text(key);
+    final message = widget.viewOnly
+        ? null
+        : optional && rule == null
+            ? null
+            : (rule ?? FmcValidation.required)(value);
+    final showError = message != null && (optional ? value.isNotEmpty : _showErrors);
     return Column(
       children: [
         FlowLabel(label),
@@ -1357,10 +1754,8 @@ class _EstablishmentDataSceneState
           maxLength: maxLength,
           keyboardType: digits ? TextInputType.number : TextInputType.text,
           readOnly: widget.viewOnly,
-          error: widget.viewOnly
-              ? null
-              : _error((rule ?? FmcValidation.required)(store.text(key))),
-          reserveErrorSpace: widget.viewOnly ? false : _showErrors,
+          error: showError ? message : null,
+          reserveErrorSpace: false,
           onChanged: (_) => setState(() {}),
         ),
       ],

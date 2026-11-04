@@ -61,28 +61,40 @@ class FusionDocumentUpload {
     return name.substring(0, dot).trim();
   }
 
-  /// Same rules as Fusion `FundPersonalDocumentsComponent` (binary PDF scan).
+  /// Same intent as Fusion web upload guard, but ignores compressed `stream`
+  /// bodies — raw binary often contains `/JS`, `/AA`, `Launch`, etc. by chance
+  /// and falsely rejected normal phone/scanner PDFs.
   static void _rejectSuspiciousPdf(Uint8List pdfBytes) {
     final content = latin1.decode(pdfBytes);
     final imageOnly = content.contains('/Subtype /Image') ||
         content.contains('Subtype/Image');
     if (imageOnly) return;
 
-    const keywords = [
-      '/JavaScript',
-      '/JS',
-      '/AA',
-      '/OpenAction',
-      'Launch',
-      '<script',
-    ];
-    for (final keyword in keywords) {
-      if (content.contains(keyword)) {
-        throw FusionDocumentUploadException(
-          '❌ الملف مرفوض — يرجى رفع ملف PDF آخر (بدون محتوى تفاعلي).',
-        );
-      }
+    final structure = _pdfStructureText(content);
+    // PDF name tokens only (not bare "Launch" / short ASCII in binary).
+    final suspicious = RegExp(
+      r'/JavaScript(?![A-Za-z0-9])|'
+      r'/JS(?![A-Za-z0-9])|'
+      r'/AA(?![A-Za-z0-9])|'
+      r'/OpenAction(?![A-Za-z0-9])|'
+      r'/Launch(?![A-Za-z0-9])|'
+      r'<script',
+      caseSensitive: false,
+    );
+    if (suspicious.hasMatch(structure)) {
+      throw FusionDocumentUploadException(
+        '❌ الملف مرفوض — يرجى رفع ملف PDF آخر (بدون محتوى تفاعلي).',
+      );
     }
+  }
+
+  /// Drop `stream`…`endstream` payloads so keyword checks run on dictionaries
+  /// / catalog only (where interactive actions are declared).
+  static String _pdfStructureText(String content) {
+    return content.replaceAll(
+      RegExp(r'stream\r?\n[\s\S]*?endstream', multiLine: true),
+      'stream\nendstream',
+    );
   }
 
   static Future<Uint8List> _imageToPdf(LocalDocumentFile file) async {

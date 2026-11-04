@@ -8,18 +8,29 @@ import 'package:loanofficer/presenter/fund_track/widgets/personal_fund_tab_chrom
     show personalFundBrandGradient;
 
 Widget personalFundDisabledTab(String message) {
-  return Center(
-    child: Padding(
-      padding: EdgeInsets.all(24.w),
-      child: Text(
-        message,
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          fontFamily: AppFonts.dinNextArabic,
-          color: AppColors.muted,
-          fontSize: 14.sp,
+  return ColoredBox(
+    color: AppColors.page,
+    child: CustomScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      slivers: [
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: Padding(
+              padding: EdgeInsets.all(24.w),
+              child: Text(
+                message,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: AppFonts.dinNextArabic,
+                  color: AppColors.muted,
+                  fontSize: 14.sp,
+                ),
+              ),
+            ),
+          ),
         ),
-      ),
+      ],
     ),
   );
 }

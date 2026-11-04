@@ -96,6 +96,17 @@ class _NewIndividualRequestSceneState
     return FmcValidation.requiredMessage;
   }
 
+  /// Web: complete تمويل fields before adding / linking a منشأة.
+  bool get _fundingDataReady =>
+      _productError == null &&
+      _amountError == null &&
+      _installmentsError == null;
+
+  bool get _canPickOrganization =>
+      _client != null && _organizations.isNotEmpty && !_orgLookupBusy;
+
+  bool get _canAddOrganization => _client != null && _fundingDataReady;
+
   @override
   void dispose() {
     _amount.dispose();
@@ -143,6 +154,11 @@ class _NewIndividualRequestSceneState
   }
 
   Future<void> _openEstablishment({bool createNew = false}) async {
+    if (createNew && !_fundingDataReady) {
+      setState(() => _showAllErrors = true);
+      _showValidation('برجاء استكمال بيانات التمويل أولاً');
+      return;
+    }
     final nationalId = _nationalId.text.trim();
     final result = await Navigator.of(context).push<EstablishmentInfo>(
       MaterialPageRoute(
@@ -150,7 +166,8 @@ class _NewIndividualRequestSceneState
           initial: createNew ? null : _establishment,
           nationalId: nationalId.length == 14 ? nationalId : null,
           organizations: _organizations,
-          allowSelectExisting: _client != null && !createNew,
+          // Web add-org modal has no existing-org picker.
+          allowSelectExisting: false,
         ),
       ),
     );
@@ -171,16 +188,14 @@ class _NewIndividualRequestSceneState
   }
 
   Future<void> _loadOrganizationsForCustomer(String nationalId) async {
-    setState(() {
-      _orgLookupBusy = true;
-      _selectedOrg = null;
-    });
+    // Busy flag is owned by `_lookupNationalId` for the whole
+    // customer + منشأة fetch.
     try {
-      var rows =
+      // Web create-request: orgs linked to this national ID only.
+      // Empty list is correct until the customer has a saved منشأة
+      // (`POST cif/organizations` on اضافة).
+      final rows =
           await _personalFundApi.organizationsByCustNationalId(nationalId);
-      if (rows.isEmpty) {
-        rows = await _personalFundApi.organizationsByIdno(nationalId);
-      }
       if (!mounted || _nationalId.text.trim() != nationalId) return;
       final options = <EstablishmentOrgOption>[
         for (final row in rows)
@@ -203,8 +218,10 @@ class _NewIndividualRequestSceneState
   }
 
   Future<void> _pickOrganization() async {
-    if (_organizations.isEmpty) {
-      _showValidation('لا توجد منشآت مرتبطة بهذا الرقم القومي');
+    if (!_canPickOrganization) {
+      if (_organizations.isEmpty) {
+        _showValidation('لا توجد منشآت مرتبطة بهذا الرقم القومي');
+      }
       return;
     }
     final choice = await showChoiceDialog(
@@ -312,9 +329,21 @@ class _NewIndividualRequestSceneState
     });
   }
 
-  Future<void> _addOrganization() => _openEstablishment(createNew: true);
+  Future<void> _addOrganization() {
+    if (!_canAddOrganization) {
+      setState(() => _showAllErrors = true);
+      _showValidation('برجاء استكمال بيانات التمويل أولاً');
+      return Future.value();
+    }
+    return _openEstablishment(createNew: true);
+  }
 
   Future<void> _editOrganization() async {
+    if (!_fundingDataReady) {
+      setState(() => _showAllErrors = true);
+      _showValidation('برجاء استكمال بيانات التمويل أولاً');
+      return;
+    }
     final orgId = (_selectedOrg?.id ?? _establishment?.orgId ?? '').trim();
     final nationalId = _nationalId.text.trim();
     EstablishmentInfo? initial = _establishment;
@@ -351,7 +380,8 @@ class _NewIndividualRequestSceneState
         builder: (_) => EstablishmentDataScene(
           initial: initial,
           nationalId: nationalId.length == 14 ? nationalId : null,
-          organizations: _organizations,
+          organizations: const [],
+          allowSelectExisting: false,
           editExisting: orgId.isNotEmpty,
         ),
       ),
@@ -382,6 +412,18 @@ class _NewIndividualRequestSceneState
     _orgLookupBusy = false;
   }
 
+  /// After successful create: stay on إنشاء and wipe the form (web parity).
+  void _resetCreateForm() {
+    _amount.clear();
+    _installments.clear();
+    _nationalId.clear();
+    _product = null;
+    _showAllErrors = false;
+    _amountTouched = false;
+    _submitting = false;
+    _clearClientLookup();
+  }
+
   void _onNationalIdChanged() {
     final id = _nationalId.text.trim();
     if (id.length != 14 || FmcValidation.nationalId(id) != null) {
@@ -394,11 +436,20 @@ class _NewIndividualRequestSceneState
   }
 
   /// Fusion: `cif/customers/names` then existing ⇒ show name/id inline; else new-customer cycle.
+  /// Shows loading from the moment the ID is 14 digits until client + منشأة finish.
   Future<void> _lookupNationalId() async {
     final id = _nationalId.text.trim();
     if (id.length != 14 || FmcValidation.nationalId(id) != null) return;
     if (_nationalIdLookupBusy || id == _checkedNationalId) return;
-    setState(() => _nationalIdLookupBusy = true);
+    setState(() {
+      _nationalIdLookupBusy = true;
+      _orgLookupBusy = true;
+      _client = null;
+      _clientName.clear();
+      _organizations = const [];
+      _establishment = null;
+      _selectedOrg = null;
+    });
     _checkedNationalId = id;
     try {
       final resolution = await _nationalIdFlow.resolve(id);
@@ -439,19 +490,30 @@ class _NewIndividualRequestSceneState
             _organizations = const [];
             _establishment = null;
             _selectedOrg = null;
+            _orgLookupBusy = false;
           });
+          // Stop spinner before opening the new-customer form.
+          if (mounted) {
+            setState(() => _nationalIdLookupBusy = false);
+          }
           await _openNewCustomer(
             nationalId,
             check: check,
             lookups: lookups,
           );
+          return;
       }
     } catch (error) {
       if (!mounted || _nationalId.text.trim() != id) return;
       _checkedNationalId = null;
       showAuthError(context, error);
     } finally {
-      if (mounted) setState(() => _nationalIdLookupBusy = false);
+      if (mounted) {
+        setState(() {
+          _nationalIdLookupBusy = false;
+          _orgLookupBusy = false;
+        });
+      }
       final latest = _nationalId.text.trim();
       if (mounted && latest != id && latest.length == 14) {
         _lookupNationalId();
@@ -541,7 +603,9 @@ class _NewIndividualRequestSceneState
         note:
             'الطلب الان في مرحلة المراجعة\nيمكنك متابعة الطلب من صفحة\nمتابعة طلبات التمويل',
       );
-      if (mounted) Navigator.of(context).pop(true);
+      if (!mounted) return;
+      // Stay on إنشاء (especially when embedInShell) — do not pop the tab.
+      setState(_resetCreateForm);
     } catch (error) {
       if (!mounted) return;
       showAuthError(context, error);
@@ -577,15 +641,16 @@ class _NewIndividualRequestSceneState
             existingCustomer: existingCustomer,
             organizationLabel: _selectedOrg?.name ?? '',
             organizationError: _shown(_establishmentError),
-            organizationBusy: _orgLookupBusy,
             hasOrganizationSelection: _selectedOrg != null,
+            canPickOrganization: _canPickOrganization,
             reserveErrorSpace: _showAllErrors,
-            nationalIdLookupBusy: _nationalIdLookupBusy,
+            lookupBusy: _nationalIdLookupBusy || _orgLookupBusy,
             onProduct: () => _pickProduct(state.data.products),
             onInstallments: _pickInstallments,
             onViewClient: existingCustomer ? _viewClient : null,
             onAddClient: existingCustomer ? _editClient : null,
-            onPickOrganization: existingCustomer ? _pickOrganization : null,
+            onPickOrganization:
+                _canPickOrganization ? _pickOrganization : null,
             onViewOrganization:
                 existingCustomer && _selectedOrg != null
                     ? _viewOrganization
@@ -634,8 +699,8 @@ class _CreateRequestForm extends StatelessWidget {
     required this.clientName,
     required this.existingCustomer,
     required this.organizationLabel,
-    required this.organizationBusy,
     required this.hasOrganizationSelection,
+    required this.canPickOrganization,
     required this.onProduct,
     required this.onInstallments,
     required this.onChanged,
@@ -645,7 +710,7 @@ class _CreateRequestForm extends StatelessWidget {
     this.onPickOrganization,
     this.onViewOrganization,
     this.onAddOrganization,
-    this.nationalIdLookupBusy = false,
+    this.lookupBusy = false,
     this.reserveErrorSpace = false,
   });
 
@@ -661,8 +726,8 @@ class _CreateRequestForm extends StatelessWidget {
   final bool existingCustomer;
   final String organizationLabel;
   final String? organizationError;
-  final bool organizationBusy;
   final bool hasOrganizationSelection;
+  final bool canPickOrganization;
   final VoidCallback onProduct;
   final VoidCallback onInstallments;
   final VoidCallback? onViewClient;
@@ -671,7 +736,7 @@ class _CreateRequestForm extends StatelessWidget {
   final VoidCallback? onViewOrganization;
   final VoidCallback? onAddOrganization;
   final ValueChanged<String> onChanged;
-  final bool nationalIdLookupBusy;
+  final bool lookupBusy;
   final bool reserveErrorSpace;
 
   @override
@@ -730,56 +795,56 @@ class _CreateRequestForm extends StatelessWidget {
                 digitsOnly: true,
                 maxLength: 14,
                 keyboardType: TextInputType.number,
+                readOnly: lookupBusy,
                 error: nationalIdError,
                 reserveErrorSpace: reserveErrorSpace,
                 onChanged: (_) => onChanged('nationalId'),
               ),
-              if (nationalIdLookupBusy) ...[
+              if (lookupBusy) ...[
+                SizedBox(height: 12.h),
+                const _LookupBusyCard(),
+              ] else ...[
+                SizedBox(height: 14.h),
+                const FlowLabel('إسم العميل'),
+                SizedBox(height: 6.h),
+                _ReadonlyBox(
+                  text: clientName.text,
+                  hint: 'إسم العميل',
+                  enabled: existingCustomer,
+                ),
                 SizedBox(height: 8.h),
-                _InlineBusy(label: 'جاري التحقق من الرقم القومي…'),
-              ],
-              SizedBox(height: 14.h),
-              const FlowLabel('إسم العميل'),
-              SizedBox(height: 6.h),
-              _ReadonlyBox(
-                text: clientName.text,
-                hint: 'إسم العميل',
-                enabled: existingCustomer,
-              ),
-              SizedBox(height: 8.h),
-              _TwinActionButtons(
-                viewLabel: 'عرض',
-                addLabel: 'تعديل',
-                onView: existingCustomer ? onViewClient : null,
-                onAdd: existingCustomer ? onAddClient : null,
-              ),
-              SizedBox(height: 14.h),
-              const FlowLabel('المنشأة'),
-              SizedBox(height: 6.h),
-              _OrgDropdownBox(
-                label: organizationLabel,
-                enabled: existingCustomer && !organizationBusy,
-                selected: hasOrganizationSelection,
-                error: organizationError != null,
-                onTap: onPickOrganization,
-              ),
-              SizedBox(height: 8.h),
-              _TwinActionButtons(
-                viewLabel: 'عرض',
-                addLabel: hasOrganizationSelection ? 'تعديل' : 'اضافة',
-                addIcon: hasOrganizationSelection
-                    ? Icons.edit_outlined
-                    : Icons.add_box_outlined,
-                onView: existingCustomer && hasOrganizationSelection
-                    ? onViewOrganization
-                    : null,
-                onAdd: existingCustomer ? onAddOrganization : null,
-              ),
-              if (organizationBusy) ...[
+                _TwinActionButtons(
+                  viewLabel: 'عرض',
+                  addLabel: 'تعديل',
+                  onView: existingCustomer ? onViewClient : null,
+                  onAdd: existingCustomer ? onAddClient : null,
+                ),
+                SizedBox(height: 14.h),
+                const FlowLabel('المنشأة'),
+                SizedBox(height: 6.h),
+                _OrgDropdownBox(
+                  label: organizationLabel,
+                  enabled: canPickOrganization,
+                  selected: hasOrganizationSelection,
+                  error: organizationError != null,
+                  onTap: onPickOrganization,
+                ),
                 SizedBox(height: 8.h),
-                const _InlineBusy(label: 'جاري تحميل المنشآت…'),
+                _TwinActionButtons(
+                  viewLabel: 'عرض',
+                  addLabel: hasOrganizationSelection ? 'تعديل' : 'اضافة',
+                  addIcon: hasOrganizationSelection
+                      ? Icons.edit_outlined
+                      : Icons.add_box_outlined,
+                  onView: existingCustomer && hasOrganizationSelection
+                      ? onViewOrganization
+                      : null,
+                  // Always tappable when customer exists — handlers enforce
+                  // بيانات التمويل first (web parity toast).
+                  onAdd: existingCustomer ? onAddOrganization : null,
+                ),
               ],
-              if (organizationError != null) ...[
+              if (organizationError != null && !lookupBusy) ...[
                 SizedBox(height: 4.h),
                 Text(
                   organizationError!,
@@ -1059,34 +1124,41 @@ class _OrgDropdownBox extends StatelessWidget {
   }
 }
 
-class _InlineBusy extends StatelessWidget {
-  const _InlineBusy({required this.label});
-
-  final String label;
+class _LookupBusyCard extends StatelessWidget {
+  const _LookupBusyCard();
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      textDirection: TextDirection.rtl,
-      children: [
-        SizedBox(
-          width: 16.r,
-          height: 16.r,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: AppColors.accent,
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 22.h),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FBFE),
+        borderRadius: BorderRadius.circular(14.r),
+        border: Border.all(color: const Color(0xFFB9D7F2)),
+      ),
+      child: Column(
+        children: [
+          SizedBox(
+            width: 28.r,
+            height: 28.r,
+            child: const CircularProgressIndicator(
+              strokeWidth: 2.6,
+              color: AppColors.accent,
+            ),
           ),
-        ),
-        SizedBox(width: 8.w),
-        Text(
-          label,
-          style: TextStyle(
-            color: AppColors.fieldLabel,
-            fontSize: 12.sp,
-            fontWeight: FontWeight.w600,
+          SizedBox(height: 12.h),
+          Text(
+            'جاري جلب بيانات العميل والمنشأة…',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: AppColors.navy,
+              fontSize: 13.sp,
+              fontWeight: FontWeight.w700,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

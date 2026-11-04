@@ -13,6 +13,7 @@ import 'package:loanofficer/presenter/fund_track/widgets/personal_fund_tab_chrom
         PersonalFundEmptyState,
         PersonalFundTabPage,
         personalFundBrandGradient,
+        personalFundScrollableEmpty,
         personalFundTabAccent,
         personalFundTabIcon;
 import 'package:loanofficer/presenter/shared/document_upload/document_format_hint.dart';
@@ -37,6 +38,7 @@ class PersonalFundDocumentsTab extends StatefulWidget {
     required this.stepId,
     required this.refusedFlow,
     required this.onReload,
+    this.loading = false,
   });
 
   final PersonalFundDocumentsBundle bundle;
@@ -50,6 +52,7 @@ class PersonalFundDocumentsTab extends StatefulWidget {
   final String prodType;
   final String stepId;
   final bool refusedFlow;
+  final bool loading;
   final Future<void> Function() onReload;
 
   @override
@@ -191,8 +194,8 @@ class _PersonalFundDocumentsTabState extends State<PersonalFundDocumentsTab> {
   @override
   Widget build(BuildContext context) {
     if (!widget.authority.documentsTab) {
-      return ColoredBox(
-        color: AppColors.page,
+      return personalFundScrollableEmpty(
+        storageKey: 'personal-fund-tab-docs-empty',
         child: PersonalFundEmptyState(
           icon: personalFundTabIcon('docs'),
           message: 'المستندات غير متاحة في هذه المرحلة',
@@ -200,9 +203,17 @@ class _PersonalFundDocumentsTabState extends State<PersonalFundDocumentsTab> {
         ),
       );
     }
+    if (widget.loading) {
+      return personalFundScrollableEmpty(
+        storageKey: 'personal-fund-tab-docs-loading',
+        child: const Center(
+          child: CircularProgressIndicator(color: AppColors.primary),
+        ),
+      );
+    }
     if (widget.bundle.isEmpty) {
-      return ColoredBox(
-        color: AppColors.page,
+      return personalFundScrollableEmpty(
+        storageKey: 'personal-fund-tab-docs-none',
         child: PersonalFundEmptyState(
           icon: Icons.folder_off_outlined,
           message: 'لا مستندات لهذه المرحلة',

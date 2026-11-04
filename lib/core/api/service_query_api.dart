@@ -19,15 +19,25 @@ class ServiceQueryApi {
   Future<List<Map<String, dynamic>>> premiums({
     required int status,
     required String serviceId,
+    bool showGlobalLoading = true,
   }) {
-    return _getList(_premiumsPath(status), {'serviceId': serviceId.trim()});
+    return _getList(
+      _premiumsPath(status),
+      {'serviceId': serviceId.trim()},
+      showGlobalLoading: showGlobalLoading,
+    );
   }
 
   Future<List<Map<String, dynamic>>> penalties({
     required int status,
     required String serviceId,
+    bool showGlobalLoading = true,
   }) {
-    return _getList(_penaltyPath(status), {'serviceId': serviceId.trim()});
+    return _getList(
+      _penaltyPath(status),
+      {'serviceId': serviceId.trim()},
+      showGlobalLoading: showGlobalLoading,
+    );
   }
 
   Future<List<Map<String, dynamic>>> grantors({
@@ -131,13 +141,17 @@ class ServiceQueryApi {
 
   Future<List<Map<String, dynamic>>> _getList(
     String path,
-    Map<String, String>? query,
-  ) async {
-    return AppLoading.watch(() async {
+    Map<String, String>? query, {
+    bool showGlobalLoading = true,
+  }) async {
+    Future<List<Map<String, dynamic>>> run() async {
       _ensureSignedIn();
       final result = await _client.get(path, query: query);
       return _maps(result);
-    });
+    }
+
+    if (!showGlobalLoading) return run();
+    return AppLoading.watch(run);
   }
 
   Future<dynamic> _get(String path, Map<String, String>? query) async {

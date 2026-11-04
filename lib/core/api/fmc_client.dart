@@ -116,7 +116,10 @@ class FmcClient {
       final unauthorized =
           response.statusCode == 401 || status == 'UNAUTHORIZED';
       if (unauthorized) {
-        _onUnauthorized();
+        // "Access denied" is a missing privilege, not an expired token.
+        if (!_isAccessDenied(json, message)) {
+          _onUnauthorized();
+        }
         throw AuthApiException(
           message ?? 'بيانات الدخول غير صحيحة',
         );
@@ -125,7 +128,8 @@ class FmcClient {
           status == 'EXCEPTION' ||
           status == 'ERROR' ||
           status == 'FAILED' ||
-          status == 'FAIL';
+          status == 'FAIL' ||
+          status == 'FAILURE';
       final errors = json['errors'];
       final hasErrors = errors is List && errors.isNotEmpty;
       if (response.statusCode >= 400 || failedStatus || hasErrors) {
@@ -142,6 +146,31 @@ class FmcClient {
       throw AuthApiException('تعذر إكمال الطلب');
     }
     return null;
+  }
+
+  /// Fusion returns HTTP 401 + "Access denied" when the role cannot call an
+  /// admin path. That must not clear the signed-in session.
+  bool _isAccessDenied(Map<String, dynamic> json, String? message) {
+    final haystack = [
+      if (message != null) message,
+      '${json['status'] ?? ''}',
+      ..._errorMessages(json),
+    ].join(' ').toLowerCase();
+    return haystack.contains('access denied') ||
+        haystack.contains('تم رفض الوصول');
+  }
+
+  List<String> _errorMessages(Map<String, dynamic> json) {
+    final errors = json['errors'];
+    if (errors is! List) return const [];
+    final out = <String>[];
+    for (final error in errors) {
+      if (error is Map) {
+        final msg = error['msg'];
+        if (msg is String && msg.trim().isNotEmpty) out.add(msg.trim());
+      }
+    }
+    return out;
   }
 
   void _onUnauthorized() {

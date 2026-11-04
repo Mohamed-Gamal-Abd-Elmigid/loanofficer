@@ -440,7 +440,7 @@ class ClientApi {
     String? clientId,
     ClientLookups? lookups,
   }) {
-    return AppLoading.watch(() async {
+    return AppLoading.blocking(() async {
       final login = await _session.readLogin();
       final existing = clientId?.trim() ?? '';
       final resolved = await _resolveAddressCodes(values, lookups);
@@ -654,7 +654,7 @@ class ClientApi {
     Map<String, dynamic> fields, {
     bool basic = false,
   }) {
-    return AppLoading.watch(() async {
+    return AppLoading.blocking(() async {
       final body = Map<String, dynamic>.from(_cache[clientId] ?? {});
       body.addAll(fields);
       body['custno'] = clientId;

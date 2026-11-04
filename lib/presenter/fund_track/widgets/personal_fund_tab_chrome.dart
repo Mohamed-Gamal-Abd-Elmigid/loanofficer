@@ -34,83 +34,146 @@ String? personalFundTabSubtitle(String tabId) {
   };
 }
 
+/// Height of [PersonalFundWizardTabBar] including outer padding (for pinned sliver).
+double personalFundWizardTabBarExtent() => 6.r * 2 + 52.h + 10.h;
+
 /// Full-width tab strip — each tab shares equal width (بيانات التمويل … أسباب الرفض).
 class PersonalFundWizardTabBar extends StatelessWidget {
   const PersonalFundWizardTabBar({
     super.key,
     required this.controller,
     required this.tabs,
+    this.elevated = false,
   });
 
   final TabController controller;
   final List<({String id, String label})> tabs;
 
+  /// Stronger shadow when the bar is pinned over scrolled content.
+  final bool elevated;
+
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 12.w),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: AppColors.white,
-          borderRadius: BorderRadius.circular(16.r),
-          border: Border.all(color: AppColors.cardBorder),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.cardShadow,
-              blurRadius: 12.r,
-              offset: Offset(0, 3.h),
-            ),
-          ],
-        ),
-        child: Padding(
-          padding: EdgeInsets.all(6.r),
-          child: TabBar(
-            controller: controller,
-            isScrollable: false,
-            tabAlignment: TabAlignment.fill,
-            dividerColor: Colors.transparent,
-            indicator: BoxDecoration(
-              color: AppColors.primary,
-              borderRadius: BorderRadius.circular(12.r),
-            ),
-            indicatorSize: TabBarIndicatorSize.tab,
-            labelPadding: EdgeInsets.zero,
-            labelColor: AppColors.white,
-            unselectedLabelColor: AppColors.muted,
-            tabs: [
-              for (final tab in tabs)
-                Tab(
-                  height: 52.h,
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 4.w),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(personalFundTabIcon(tab.id), size: 18.r),
-                        SizedBox(height: 3.h),
-                        FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(
-                            tab.label,
-                            maxLines: 2,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontFamily: AppFonts.dinNextArabic,
-                              fontSize: 10.sp,
-                              fontWeight: FontWeight.w800,
-                              height: 1.15,
+    return Material(
+      color: AppColors.page,
+      elevation: elevated ? 2 : 0,
+      shadowColor: AppColors.cardShadow,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(12.w, 4.h, 12.w, 6.h),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: AppColors.white,
+            borderRadius: BorderRadius.circular(16.r),
+            border: Border.all(color: AppColors.cardBorder),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.cardShadow,
+                blurRadius: elevated ? 16.r : 12.r,
+                offset: Offset(0, elevated ? 4.h : 3.h),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: EdgeInsets.all(6.r),
+            child: TabBar(
+              controller: controller,
+              isScrollable: false,
+              tabAlignment: TabAlignment.fill,
+              dividerColor: Colors.transparent,
+              indicator: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(12.r),
+              ),
+              indicatorSize: TabBarIndicatorSize.tab,
+              labelPadding: EdgeInsets.zero,
+              labelColor: AppColors.white,
+              unselectedLabelColor: AppColors.muted,
+              tabs: [
+                for (final tab in tabs)
+                  Tab(
+                    height: 52.h,
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 4.w),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(personalFundTabIcon(tab.id), size: 18.r),
+                          SizedBox(height: 3.h),
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              tab.label,
+                              maxLines: 2,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontFamily: AppFonts.dinNextArabic,
+                                fontSize: 10.sp,
+                                fontWeight: FontWeight.w800,
+                                height: 1.15,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
+  }
+}
+
+/// Pins the wizard tab strip under a collapsing order header ([NestedScrollView]).
+class PersonalFundPinnedTabBarDelegate extends SliverPersistentHeaderDelegate {
+  PersonalFundPinnedTabBarDelegate({
+    required this.controller,
+    required this.tabs,
+    required this.elevated,
+  });
+
+  final TabController controller;
+  final List<({String id, String label})> tabs;
+  final bool elevated;
+
+  @override
+  double get minExtent => personalFundWizardTabBarExtent();
+
+  @override
+  double get maxExtent => personalFundWizardTabBarExtent();
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return PersonalFundWizardTabBar(
+      controller: controller,
+      tabs: tabs,
+      elevated: elevated || overlapsContent || shrinkOffset > 0,
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant PersonalFundPinnedTabBarDelegate oldDelegate) {
+    return oldDelegate.controller != controller ||
+        oldDelegate.elevated != elevated ||
+        oldDelegate.tabs.length != tabs.length ||
+        !_sameTabs(oldDelegate.tabs, tabs);
+  }
+
+  static bool _sameTabs(
+    List<({String id, String label})> a,
+    List<({String id, String label})> b,
+  ) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].id != b[i].id || a[i].label != b[i].label) return false;
+    }
+    return true;
   }
 }
 
@@ -271,6 +334,9 @@ class PersonalFundStatChip extends StatelessWidget {
 }
 
 /// Standard tab scroll body (page bg + hero + content).
+///
+/// Uses always-scrollable physics so [NestedScrollView] can collapse/expand
+/// the order header even when tab content is short.
 class PersonalFundTabPage extends StatelessWidget {
   const PersonalFundTabPage({
     super.key,
@@ -290,6 +356,8 @@ class PersonalFundTabPage extends StatelessWidget {
     return ColoredBox(
       color: AppColors.page,
       child: ListView(
+        key: PageStorageKey<String>('personal-fund-tab-$tabId'),
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.fromLTRB(16.w, 8.h, 16.w, 24.h),
         children: [
           if (showSectionHeader)
@@ -369,37 +437,53 @@ class PersonalFundEmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = accent ?? AppColors.accent;
-    return Center(
-      child: Padding(
-        padding: EdgeInsets.symmetric(vertical: 48.h, horizontal: 24.w),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 64.r,
-              height: 64.r,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: AppColors.iconBubble,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, size: 32.r, color: color),
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 48.h, horizontal: 24.w),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 64.r,
+            height: 64.r,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: AppColors.iconBubble,
+              shape: BoxShape.circle,
             ),
-            SizedBox(height: 14.h),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontFamily: AppFonts.dinNextArabic,
-                color: AppColors.muted,
-                fontSize: 14.sp,
-                fontWeight: FontWeight.w600,
-                height: 1.4,
-              ),
+            child: Icon(icon, size: 32.r, color: color),
+          ),
+          SizedBox(height: 14.h),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: AppFonts.dinNextArabic,
+              color: AppColors.muted,
+              fontSize: 14.sp,
+              fontWeight: FontWeight.w600,
+              height: 1.4,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
+}
+
+/// Scrollable empty/disabled tab body so NestedScrollView can still collapse
+/// the order header when there is little content.
+Widget personalFundScrollableEmpty({required Widget child, String? storageKey}) {
+  return ColoredBox(
+    color: AppColors.page,
+    child: CustomScrollView(
+      key: storageKey == null ? null : PageStorageKey<String>(storageKey),
+      physics: const AlwaysScrollableScrollPhysics(),
+      slivers: [
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: child,
+        ),
+      ],
+    ),
+  );
 }

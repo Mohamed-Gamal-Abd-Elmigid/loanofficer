@@ -19,6 +19,7 @@ class PersonalFundWarrantiesTab extends StatefulWidget {
     required this.initialGrantors,
     required this.initialInkind,
     required this.onReload,
+    this.loading = false,
   });
 
   final String serviceId;
@@ -28,6 +29,7 @@ class PersonalFundWarrantiesTab extends StatefulWidget {
   final PersonalFundApi api;
   final List<Map<String, dynamic>> initialGrantors;
   final List<Map<String, dynamic>> initialInkind;
+  final bool loading;
   final Future<void> Function() onReload;
 
   @override
@@ -77,12 +79,20 @@ class _PersonalFundWarrantiesTabState extends State<PersonalFundWarrantiesTab> {
   @override
   Widget build(BuildContext context) {
     if (!widget.authority.warrantiesTab) {
-      return ColoredBox(
-        color: AppColors.page,
+      return personalFundScrollableEmpty(
+        storageKey: 'personal-fund-tab-warr-empty',
         child: PersonalFundEmptyState(
           icon: personalFundTabIcon('warr'),
           message: 'الضمانات غير متاحة في هذه المرحلة',
           accent: personalFundTabAccent('warr'),
+        ),
+      );
+    }
+    if (widget.loading) {
+      return personalFundScrollableEmpty(
+        storageKey: 'personal-fund-tab-warr-loading',
+        child: const Center(
+          child: CircularProgressIndicator(color: AppColors.primary),
         ),
       );
     }

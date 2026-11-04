@@ -208,7 +208,7 @@ class FundTrackApi {
   }
 
   Future<void> _post(String path, Map<String, dynamic> body) {
-    return AppLoading.watch(() => _client.post(path, body));
+    return AppLoading.blocking(() => _client.post(path, body));
   }
 
   static List<FundTrackRow> _rows(dynamic result) {

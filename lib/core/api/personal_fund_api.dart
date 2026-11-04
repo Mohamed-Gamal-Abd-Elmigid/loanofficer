@@ -84,7 +84,7 @@ class PersonalFundApi {
     required String serviceId,
     required List<Map<String, dynamic>> data,
   }) {
-    return AppLoading.watch(() async {
+    return AppLoading.blocking(() async {
       _ensureSignedIn();
       await _client.put('wf/grantors', {
         'serviceId': serviceId,
@@ -97,7 +97,7 @@ class PersonalFundApi {
     required String ticketId,
     required List<Map<String, dynamic>> data,
   }) {
-    return AppLoading.watch(() async {
+    return AppLoading.blocking(() async {
       _ensureSignedIn();
       await _client.put('wf/rejection', {
         'ticketId': ticketId,
@@ -170,42 +170,42 @@ class PersonalFundApi {
 
   /// Web `wf/micofin/request/save` (constructPayload + saveOnly).
   Future<void> savePersonalRequest(Map<String, dynamic> payload) {
-    return AppLoading.watch(() async {
+    return AppLoading.blocking(() async {
       _ensureSignedIn();
       await _client.post('wf/micofin/request/save', payload);
     });
   }
 
   Future<void> wfActionSave(Map<String, dynamic> payload) {
-    return AppLoading.watch(() async {
+    return AppLoading.blocking(() async {
       _ensureSignedIn();
       await _client.post('wf/action/save', payload);
     });
   }
 
   Future<void> wfActionApprove(Map<String, dynamic> payload) {
-    return AppLoading.watch(() async {
+    return AppLoading.blocking(() async {
       _ensureSignedIn();
       await _client.post('wf/action/approve', payload);
     });
   }
 
   Future<void> wfActionRefuse(Map<String, dynamic> payload) {
-    return AppLoading.watch(() async {
+    return AppLoading.blocking(() async {
       _ensureSignedIn();
       await _client.post('wf/action/refuse', payload);
     });
   }
 
   Future<void> wfActionReject(Map<String, dynamic> payload) {
-    return AppLoading.watch(() async {
+    return AppLoading.blocking(() async {
       _ensureSignedIn();
       await _client.post('wf/action/reject', payload);
     });
   }
 
   Future<void> wfActionCancel(Map<String, dynamic> payload) {
-    return AppLoading.watch(() async {
+    return AppLoading.blocking(() async {
       _ensureSignedIn();
       await _client.post('wf/action/cancel', payload);
     });
@@ -213,7 +213,7 @@ class PersonalFundApi {
 
   /// Web «تحويل الطلب لمرحلة معينة» (`wf/action/refusedSteps`).
   Future<void> wfRefusedSteps(Map<String, dynamic> payload) {
-    return AppLoading.watch(() async {
+    return AppLoading.blocking(() async {
       _ensureSignedIn();
       await _client.post('wf/action/refusedSteps', payload);
     });
@@ -223,7 +223,7 @@ class PersonalFundApi {
     required String custno,
     required List<Map<String, dynamic>> data,
   }) {
-    return AppLoading.watch(() async {
+    return AppLoading.blocking(() async {
       _ensureSignedIn();
       await _client.put('wf/guarantees', {
         'custno': custno,
@@ -294,16 +294,55 @@ class PersonalFundApi {
     });
   }
 
+  /// Web org modal insert — `POST cif/organizations` (`addOrg`).
+  /// Returns the created `orgId`.
+  Future<String> createOrganization({
+    required Map<String, String> values,
+    required List<Map<String, String>> partners,
+  }) {
+    return AppLoading.blocking(() async {
+      _ensureSignedIn();
+      final body = organizationSaveBody(values: values, partners: partners);
+      body['orgId'] = null;
+      final result = await _client.post('cif/organizations', body);
+      final id = _orgIdFromResponse(result);
+      if (id.isEmpty) {
+        throw AuthApiException('تعذر إنشاء المنشأة');
+      }
+      return id;
+    });
+  }
+
   /// Web org edit modal — `PUT cif/organizations`.
   Future<void> saveOrganization({
     required Map<String, String> values,
     required List<Map<String, String>> partners,
   }) {
-    return AppLoading.watch(() async {
+    return AppLoading.blocking(() async {
       _ensureSignedIn();
       final body = organizationSaveBody(values: values, partners: partners);
       await _client.put('cif/organizations', body);
     });
+  }
+
+  static String _orgIdFromResponse(dynamic result) {
+    if (result == null) return '';
+    if (result is num || result is String) {
+      final text = '$result'.trim();
+      return text.toLowerCase() == 'null' ? '' : text;
+    }
+    if (result is Map) {
+      for (final key in const ['orgId', 'id', 'organizationId']) {
+        final value = result[key];
+        final text = value == null ? '' : '$value'.trim();
+        if (text.isNotEmpty && text.toLowerCase() != 'null') return text;
+      }
+      final nested = result['result'];
+      if (nested != null && nested != result) {
+        return _orgIdFromResponse(nested);
+      }
+    }
+    return '';
   }
 
   /// Payload shape matching Fusion org edit (`PUT cif/organizations`).
@@ -680,7 +719,7 @@ class PersonalFundApi {
   }
 
   Future<void> deleteDocument(Map<String, dynamic> params) {
-    return AppLoading.watch(() async {
+    return AppLoading.blocking(() async {
       _ensureSignedIn();
       final query = <String, String>{};
       for (final entry in params.entries) {
@@ -703,7 +742,7 @@ class PersonalFundApi {
     String? orgId,
     String? fileContentType,
   }) {
-    return AppLoading.watch(() async {
+    return AppLoading.blocking(() async {
       _ensureSignedIn();
       await _client.post('wf/documents', {
         'docId': docId,
